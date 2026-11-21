@@ -31,6 +31,7 @@
   UninstPage custom un.MemoriesUninstallWelcomeCreate un.MemoriesUninstallWelcomeLeave
 !macroend
 
+!ifndef BUILD_UNINSTALLER
 Function MemoriesWelcomeCreate
   nsDialogs::Create 1018
   Pop $0
@@ -57,7 +58,9 @@ FunctionEnd
 
 Function MemoriesWelcomeLeave
 FunctionEnd
+!endif
 
+!ifdef BUILD_UNINSTALLER
 Function un.MemoriesUninstallWelcomeCreate
   nsDialogs::Create 1018
   Pop $0
@@ -84,3 +87,4 @@ FunctionEnd
 
 Function un.MemoriesUninstallWelcomeLeave
 FunctionEnd
+!endif

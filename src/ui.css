@@ -76,3 +76,16 @@ html[data-theme=dark] .skeleton{background:#252b2e}html[data-theme=dark] .skelet
 html[data-theme=dark] .bottom-bar{background:#101214}html[data-theme=dark] .import-button:disabled{background:#273034;color:#849096}
 @media(max-width:1100px){.sidebar{width:210px;flex-basis:210px}.main-panel{padding:16px 18px 10px}.hero{height:142px;min-height:142px}.hero-art{right:2px;transform:scale(.65);transform-origin:right center}.search-box{max-width:260px}}
 @media(max-height:720px){.main-panel{padding-top:10px}.hero{height:130px;min-height:130px}.hero-art{transform:scale(.62);transform-origin:right center}.library-heading{margin-top:9px}.media-row{height:52px}.date-heading{height:40px}.bottom-bar{min-height:52px}}
+.main-panel{padding-top:14px}
+.library-heading{gap:16px;margin:0 0 10px;min-height:44px}
+.library-heading h2{margin:0;white-space:nowrap}
+.library-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.library-actions .button{height:38px;padding:0 11px}
+.library-actions .destination-button{max-width:230px}
+.library-actions .destination-button span{overflow:hidden;text-overflow:ellipsis}
+.sidebar{padding-top:14px}
+.sidebar .device-card{margin-top:14px}
+.sidebar-bottom{margin-top:auto}
+.progress-card{margin-top:0;margin-bottom:10px}
+.destination-path{margin-bottom:8px}
+@media(max-width:1100px){.library-heading{align-items:flex-start;flex-direction:column;gap:8px}.library-actions{width:100%;justify-content:flex-start}.library-actions .button{height:34px}}

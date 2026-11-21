@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import logo from '../assets/osien-logo.png';
 import {
-  ArrowDownToLine, ArrowUpRight, Check, CheckCheck, ChevronDown,
+  ArrowDownToLine, Check, CheckCheck, ChevronDown,
   FileImage, Film, FolderOpen, HardDrive, Image,
-  LoaderCircle, Minus, Moon, MoreHorizontal, Search, ShieldCheck, Smartphone,
+  LoaderCircle, Minus, Moon, MoreHorizontal, Search, Smartphone,
   Sun, X
 } from 'lucide-react';
 
@@ -63,9 +63,6 @@ export default function App() {
   const [operation, setOperation] = useState(null);
   const [device, setDevice] = useState({ state: 'checking', message: 'Looking for your iPhone…' });
   const [progress, setProgress] = useState(null);
-  const [notice, setNotice] = useState('Ready when you are');
-  const [hasImported, setHasImported] = useState(false);
-  const [importSummary, setImportSummary] = useState(null);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('aplet-theme');
     return saved === 'light' || saved === 'dark' ? saved : 'dark';
@@ -85,7 +82,7 @@ export default function App() {
       setProgress({
         kind: 'scan', found, rate,
         label: 'Scanning iPhone',
-        detail: `${found.toLocaleString()} files discovered${rate ? ` · ${rate.toLocaleString()} files/sec` : ''}. The library is being indexed as items arrive.`
+         detail: `${found.toLocaleString()} found${rate ? ` · ${rate.toLocaleString()} per sec` : ''}`
       });
     });
     window.aplet.onPhoneProgress((p) => {
@@ -148,9 +145,6 @@ export default function App() {
       : operation === 'import'
         ? `Importing files · ${progress?.completed || 0} of ${progress?.total || selected.size}`
         : device.message;
-  const completionText = importSummary
-    ? `Imported ${importSummary.photos} photos and ${importSummary.videos} videos`
-    : null;
   async function checkDevice() {
     setDevice({ state: 'checking', message: 'Looking for your iPhone…' });
     try {
@@ -168,19 +162,16 @@ export default function App() {
   async function scanPhone() {
     if (busy) return;
     setBusy(true); setSource(null); setFiles([]); setSelected(new Set());
-    setOperation('scanPhone'); setImportSummary(null);
+    setOperation('scanPhone');
     scanStarted.current = Date.now();
     setProgress({ kind: 'scan', found: 0, label: 'Connecting to iPhone', detail: 'Keep your iPhone unlocked and connected.' });
-    setNotice('Connecting to iPhone…');
     try {
       const result = await window.aplet.scanPhone();
       setSource('iphone'); setFiles(result.files); setSelected(new Set());
-      setProgress({ kind: 'complete', value: 100, label: 'Scan complete', detail: `${result.files.length.toLocaleString()} media files · ${result.errors.length} folder errors` });
-      setNotice(result.files.length ? `${result.files.length.toLocaleString()} items are ready to review` : 'No accessible media. Unlock the phone and allow photo access.');
+       setProgress({ kind: 'complete', value: 100, label: 'Scan complete', detail: `${result.files.length.toLocaleString()} media files found` });
       setDevice({ state: 'connected', message: 'iPhone connected and ready' });
     } catch (error) {
       setProgress({ kind: 'error', label: 'Could not scan iPhone', detail: error.message });
-      setNotice(error.message);
       setDevice({ state: 'error', message: 'iPhone disconnected or unavailable' });
     } finally { setBusy(false); setOperation(null); }
   }
@@ -189,20 +180,19 @@ export default function App() {
     if (busy) return;
     const folder = await window.aplet.chooseFolder('Choose a folder with photos and videos');
     if (!folder) return;
-    setBusy(true); setOperation('scanFolder'); setImportSummary(null);
+    setBusy(true); setOperation('scanFolder');
     setProgress({ kind: 'scan', found: 0, label: 'Scanning folder', detail: 'Finding photos and videos…' });
     try {
       const result = await window.aplet.scanMedia(folder);
       setSource(folder); setFiles(result.files); setSelected(new Set());
       setProgress({ kind: 'complete', value: 100, label: 'Folder scan complete', detail: `${result.files.length.toLocaleString()} media files found` });
-      setNotice(`${result.files.length.toLocaleString()} items are ready to review`);
-    } catch (error) { setProgress({ kind: 'error', label: 'Folder scan failed', detail: error.message }); setNotice(error.message); }
+    } catch (error) { setProgress({ kind: 'error', label: 'Folder scan failed', detail: error.message }); }
     finally { setBusy(false); setOperation(null); }
   }
 
   async function chooseDestination() {
     const folder = await window.aplet.chooseFolder('Choose where to save your media');
-    if (folder) { setDestination(folder); setNotice(`Saving to ${folder}`); }
+    if (folder) setDestination(folder);
   }
 
   function selectGroup(group, checked) {
@@ -217,29 +207,24 @@ export default function App() {
     if (busy || selected.size === 0 || !destination) return;
     const chosen = files.filter(file => selected.has(file.id));
     setBusy(true); setOperation('import'); setProgress({ kind: 'import', indeterminate: true, label: 'Starting import', detail: `Preparing ${chosen.length.toLocaleString()} selected files…` });
-    setNotice(`Importing ${chosen.length.toLocaleString()} files…`);
     try {
       const results = source === 'iphone'
         ? await window.aplet.importPhone({ destination, ids: chosen.map(file => file.id) })
         : await window.aplet.importMedia({ source, destination, files: chosen });
       const copied = results.filter(item => item.ok);
       const failed = results.length - copied.length;
-      if (copied.length) setHasImported(true);
       const summary = {
         photos: copied.filter(item => item.type === 'Photos').length,
         videos: copied.filter(item => item.type === 'Videos').length
       };
-      setImportSummary(summary);
       setSelected(old => {
         const next = new Set(old);
         if (source === 'iphone') copied.forEach(item => next.delete(item.id));
         else if (!failed) next.clear();
         return next;
       });
-      setNotice(failed ? `${copied.length} imported · ${failed} not imported. ${results.find(item => !item.ok)?.error || ''}` : `${copied.length.toLocaleString()} files imported successfully`);
       setProgress({ kind: failed ? 'error' : 'complete', value: 100, label: failed ? 'Import needs attention' : 'Import complete', detail: `${summary.photos} photos and ${summary.videos} videos saved${failed ? ` · ${failed} failed` : ''}` });
     } catch (error) {
-      setNotice(error.message);
       setProgress({ kind: 'error', label: 'Import stopped', detail: error.message });
     } finally { setBusy(false); setOperation(null); }
   }
@@ -254,34 +239,22 @@ export default function App() {
 
   return <div className="window-shell">
     <header className="titlebar">
-      <div className="titlebar-brand"><span className="mini-mark"><img src={logo} alt="" /></span><span>OSIEN<span className="brand-hyphen">·</span>Memories</span><span className="titlebar-divider" /><span className="titlebar-context">Media Studio</span></div>
+      <div className="titlebar-brand"><span className="mini-mark"><img src={logo} alt="" /></span><span>OSIEN<span className="brand-hyphen">·</span>Memories</span></div>
       <div className="drag-region" onDoubleClick={() => window.aplet.windowAction('toggle-maximize')} />
       <WindowControls />
     </header>
     <div className="workspace">
       <aside className="sidebar">
-        <div className="sidebar-brand"><span className="brand-orb"><img src={logo} alt="OSIEN logo" /></span><div><strong>OSIEN</strong><span>MEMORIES</span></div></div>
-        <div className="sidebar-label">WORKSPACE</div>
         <button className="nav-item active"><Image size={17} /><span>Library</span><span className="nav-count">{files.length || '—'}</span></button>
-        <div className="sidebar-label device-label">YOUR DEVICE</div>
         <div className={`device-card ${device.state}`}>
           <div className="device-icon"><Smartphone size={18} /></div>
           <div className="device-copy"><strong>Your iPhone</strong><span><i />{activeStatus}</span></div>
           <button className="icon-button tiny" title="Check connection" onClick={checkDevice} disabled={busy}><MoreHorizontal size={17} /></button>
         </div>
-        <div className="sidebar-note"><ShieldCheck size={16} /><span>Private by design<br /><b>Your files never leave this PC.</b></span></div>
-        <div className="sidebar-bottom"><button className="nav-item" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}<span>{theme === 'dark' ? 'Light appearance' : 'Dark appearance'}</span></button><span className="version-label">OSIEN Memories · 0.0.1</span></div>
+        <div className="sidebar-bottom"><button className="nav-item" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}<span>{theme === 'dark' ? 'Light appearance' : 'Dark appearance'}</span></button></div>
       </aside>
 
       <main className="main-panel">
-        <section className="hero">
-          <div className="hero-copy"><div className="eyebrow"><span /> YOUR MEMORIES, ORGANIZED</div><h1>Bring it all <em>into focus.</em></h1><p>Safely bring photos and videos from your iPhone to your PC.</p>
-            <div className="hero-actions"><button className={`button ${files.length || selected.size ? 'ghost' : 'primary'}`} onClick={scanPhone} disabled={busy}><Smartphone size={16} />{operation === 'scanPhone' ? 'Scanning iPhone…' : operation === 'scanFolder' ? 'Scanning folder…' : operation === 'import' ? 'Importing files…' : 'Read iPhone'}<ArrowDownToLine size={15} /></button><button className="button ghost" onClick={scanFolder} disabled={busy}><FolderOpen size={16} /> Open a folder</button></div>
-            <div className={`device-status ${device.state}`}><span className="status-dot" />{activeStatus}<button onClick={checkDevice} disabled={busy}>Check</button></div>
-          </div>
-          <div className="hero-art" aria-hidden="true"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="art-glow" /><div className="photo-card card-back"><Film size={18} /><span>VIDEO</span></div><div className="photo-card card-front"><div className="photo-sky" /><div className="photo-sun" /><div className="photo-hill hill-a" /><div className="photo-hill hill-b" /><div className="photo-caption"><span>RECENT MOMENTS</span><b>Captured, kept.</b></div></div><div className="art-sparkle sparkle-a">✦</div><div className="art-sparkle sparkle-b">✧</div></div>
-        </section>
-
         {progress && <section className={`progress-card ${progress.kind === 'scan' ? 'scan-progress' : ''} ${progress.kind === 'error' ? 'error-progress' : ''}`} aria-live="polite">
           <div className="progress-icon">{busy ? <LoaderCircle className="spin" size={19} /> : progress.kind === 'error' ? <X size={18} /> : <CheckCheck size={18} />}</div>
           {progress.kind === 'scan' ? <div className="scan-progress-content">
@@ -292,8 +265,12 @@ export default function App() {
         </section>}
 
         <section className="library-heading">
-          <div><div className="section-kicker">YOUR COLLECTION</div><h2>Media library <span>{files.length.toLocaleString()}</span>{operation === 'scanPhone' && <em className="indexing-badge"><i /> Indexing</em>}</h2></div>
-          <button className="button destination-button" onClick={chooseDestination}><HardDrive size={16} /><span>{destination ? 'Change save location' : 'Choose save location'}</span><ArrowUpRight size={14} /></button>
+          <h2>Media library <span>{files.length.toLocaleString()}</span>{operation === 'scanPhone' && <em className="indexing-badge"><i /> Indexing</em>}</h2>
+          <div className="library-actions">
+            <button className={`button ${files.length || selected.size ? 'ghost' : 'primary'}`} onClick={scanPhone} disabled={busy}><Smartphone size={16} />{operation === 'scanPhone' ? 'Scanning iPhone…' : operation === 'scanFolder' ? 'Scanning folder…' : operation === 'import' ? 'Importing files…' : 'Read iPhone'}</button>
+            <button className="button ghost" onClick={scanFolder} disabled={busy}><FolderOpen size={16} />Open a folder</button>
+            <button className="button destination-button" onClick={chooseDestination}><HardDrive size={16} /><span>{destination ? 'Change save location' : 'Choose save location'}</span></button>
+          </div>
         </section>
         {destination && <div className="destination-path"><FolderOpen size={13} /><span title={destination}>{destination}</span><Check size={13} /></div>}
 
@@ -304,8 +281,8 @@ export default function App() {
         <div className="selection-toolbar"><div className="selection-toggle"><TickBox checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false} onChange={toggleAll} label="Select all visible media" disabled={busy || !visible.length} /><button onClick={() => toggleAll(!allVisibleSelected)} disabled={busy || !visible.length}>{allVisibleSelected ? 'Deselect all' : 'Select all'}</button><span>·</span><span>{selected.size.toLocaleString()} selected</span></div><button className="sort-label" onClick={() => setSortOrder(old => old === 'newest' ? 'oldest' : 'newest')} aria-label="Change media sort order">{sortOrder === 'newest' ? 'Newest first' : 'Oldest first'} <ChevronDown size={14} /></button></div>
 
         <section className="media-list" aria-label="Media files">
-          {!files.length && busy ? <LibrarySkeleton /> : !files.length && operation === null && progress?.kind === 'complete' ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>No media found</h3><p>The scan completed, but no accessible photos or videos were found.</p><button className="button ghost" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Scan again</button></div> : !files.length && device.state === 'error' ? <div className="empty-library"><div className="empty-art"><Smartphone size={26} /></div><h3>iPhone not connected</h3><p>Unlock your iPhone, connect it to this PC, and tap “Trust This Computer.”</p><button className="button primary" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Try connection again</button></div> : !files.length ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>Your library starts here</h3><p>Connect your iPhone and read its media, or open a folder from this PC.</p><button className="button primary" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Read iPhone</button></div> :
-          !visible.length ? <div className="empty-library compact"><Search size={22} /><h3>No matches found</h3><p>Try a different search or media filter.</p></div> :
+          {!files.length && busy ? <LibrarySkeleton /> : !files.length && progress?.kind === 'complete' ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>No media found</h3></div> : !files.length && device.state === 'error' ? <div className="empty-library"><div className="empty-art"><Smartphone size={26} /></div><h3>No iPhone connected</h3></div> : !files.length ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>No media loaded</h3></div> :
+          !visible.length ? <div className="empty-library compact"><Search size={22} /><h3>No matches found</h3></div> :
           <div className="media-groups">{groups.map(([date, group]) => {
             const checkedCount = group.filter(file => selected.has(file.id)).length;
             const checked = checkedCount === group.length ? true : checkedCount ? 'indeterminate' : false;
@@ -320,7 +297,7 @@ export default function App() {
             </article>;
           })}</div>}
         </section>
-        <footer className="bottom-bar"><div className="footer-status"><span className={device.state==='connected'?'footer-dot':'footer-dot muted'} />{progress?.kind === 'error' ? notice : completionText || activeStatus}</div><span className="privacy-label"><ShieldCheck size={13} /> On-device · private</span>{destination && <button className="footer-open" onClick={async () => { const error = await window.aplet.openFolder(destination); if (error) setNotice(error); }}><FolderOpen size={14} />Open folder</button>}<button className="button import-button" disabled={busy || !selected.size} onClick={selected.size && !destination ? chooseDestination : importSelected}>{selected.size && !destination ? <HardDrive size={16} /> : <ArrowDownToLine size={16} />}{operation === 'import' ? 'Importing files…' : selected.size && !destination ? 'Choose save location' : `Import ${selected.size ? `${selected.size.toLocaleString()} selected` : 'selected'}`}</button></footer>
+        <footer className="bottom-bar">{destination && <button className="footer-open" onClick={async () => { const error = await window.aplet.openFolder(destination); if (error) setProgress({ kind: 'error', label: 'Could not open folder', detail: error }); }}><FolderOpen size={14} />Open folder</button>}<button className="button import-button" disabled={busy || !selected.size} onClick={selected.size && !destination ? chooseDestination : importSelected}>{selected.size && !destination ? <HardDrive size={16} /> : <ArrowDownToLine size={16} />}{operation === 'import' ? 'Importing files…' : selected.size && !destination ? 'Choose save location' : `Import ${selected.size ? `${selected.size.toLocaleString()} selected` : 'Import selected'}`}</button></footer>
       </main>
     </div>
   </div>;

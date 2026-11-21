@@ -10,7 +10,7 @@ function createWindow() {
   const window = new BrowserWindow({
     width: 1120,
     height: 760,
-    minWidth: 920,
+    minWidth: 760,
     minHeight: 680,
     title: 'OSIEN Memories',
     backgroundColor: '#101214',
@@ -51,7 +51,7 @@ ipcMain.handle('import-phone', (event, request) => {
   if (!destinations.has(request.destination)) throw new Error('Choose a destination first.');
   return phone.import(request.ids, request.destination, progress => {
     if (!event.sender.isDestroyed()) event.sender.send('phone-progress', progress);
-  });
+  }, request.layout);
 });
 ipcMain.handle('open-folder', async (_event, folder) => {
   const error = await shell.openPath(folder);

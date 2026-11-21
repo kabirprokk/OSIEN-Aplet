@@ -43,6 +43,81 @@ function phoneOperation(request, progress = () => {}) {
   });
 }
 
+function createPhoneCopySession() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(path.join(process.env.SystemRoot || 'C:\\Windows',
+      'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass',
+      '-File', path.join(__dirname.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), 'phone.ps1'), '-Session'],
+    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    let pending = '', errors = '', active = null, ready = false, closed = false;
+    let finishClose;
+    const closePromise = new Promise(done => { finishClose = done; });
+    const startupTimer = setTimeout(() => {
+      if (!ready) {
+        child.kill();
+        reject(new Error('Windows took too long to open iPhone storage.'));
+      }
+    }, 30000);
+    const session = {
+      copy(request, progress = () => {}) {
+        if (closed) return Promise.reject(new Error('The iPhone copy session closed.'));
+        if (active) return Promise.reject(new Error('Wait for the current phone copy.'));
+        return new Promise((done, fail) => {
+          active = { resolve: done, reject: fail, progress };
+          child.stdin.write(`${JSON.stringify(request)}\n`, error => {
+            if (error && active) { active.reject(error); active = null; }
+          });
+        });
+      },
+      async close() {
+        if (!closed) child.stdin.end();
+        await closePromise;
+      }
+    };
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', data => { errors += data; });
+    child.stdout.on('data', data => {
+      pending += data;
+      let newline;
+      while ((newline = pending.indexOf('\n')) !== -1) {
+        const line = pending.slice(0, newline).trim();
+        pending = pending.slice(newline + 1);
+        if (!line) continue;
+        let message;
+        try { message = JSON.parse(line); } catch { errors += line; continue; }
+        if (message.ready) {
+          ready = true;
+          clearTimeout(startupTimer);
+          resolve(session);
+        } else if (message.progress && active) {
+          active.progress(message);
+        } else if (message.result && active) {
+          active.resolve({ path: message.path, size: message.size });
+          active = null;
+        } else if (message.error && active) {
+          active.reject(new Error(message.message || 'iPhone copy failed.'));
+          active = null;
+        }
+      }
+    });
+    child.on('error', error => {
+      clearTimeout(startupTimer);
+      if (!ready) reject(error);
+      if (active) { active.reject(error); active = null; }
+    });
+    child.on('close', code => {
+      closed = true;
+      clearTimeout(startupTimer);
+      const error = new Error(errors.trim() || `iPhone copy session ended (${code}).`);
+      if (!ready) reject(error);
+      if (active) { active.reject(error); active = null; }
+      finishClose();
+    });
+  });
+}
+
 class PhoneReader {
   constructor(operation = phoneOperation) {
     this.operation = operation;
@@ -71,14 +146,20 @@ class PhoneReader {
         });
         progress({ ...event, files: discovered });
       });
-      const files = result.files.map(file => ({ ...file, id: idFor(file) }));
-      this.files.clear();
-      for (const file of files) this.files.set(file.id, file);
-      return { ...result, files: files.map(({ segments, ...file }) => file) };
+      // The Windows helper streams batches instead of serializing the entire
+      // library a second time in its final response. Keep compatibility with
+      // helpers that return a file list without progress events.
+      if (Array.isArray(result.files)) {
+        for (const file of result.files) {
+          const id = idFor(file);
+          this.files.set(id, { ...file, id });
+        }
+      }
+      return { ...result, files: [...this.files.values()].map(({ segments, ...file }) => file) };
     } finally { this.busy = false; }
   }
 
-  async import(ids, destination, progress = () => {}) {
+  async import(ids, destination, progress = () => {}, layout = 'organized') {
     if (this.busy) throw new Error('Wait for the current phone operation.');
     if (!Array.isArray(ids) || !ids.length || ids.some(id => !this.files.has(id))) {
       throw new Error('Read the iPhone again before importing.');
@@ -87,7 +168,11 @@ class PhoneReader {
     const results = [];
     const selected = [...new Set(ids)];
     let completedBytes = 0;
+    let session;
     try {
+      if (this.operation === phoneOperation && selected.length > 1) {
+        session = await createPhoneCopySession();
+      }
       for (const id of selected) {
         const file = this.files.get(id);
         progress({ phase: 'transfer', name: file.name, completed: results.length,
@@ -96,7 +181,7 @@ class PhoneReader {
         let staging;
         try {
           staging = await fs.mkdtemp(path.join(destination, '.aplet-transfer-'));
-          const copied = await this.operation({
+          const copied = await (session ? session.copy.bind(session) : this.operation)({
             action: 'copy', segments: file.segments, size: file.size, destination: staging
           }, update => progress({
             phase: 'transfer', name: file.name, completed: results.length,
@@ -110,10 +195,14 @@ class PhoneReader {
             total: selected.length, bytes: completedBytes + file.size,
             currentBytes: file.size, currentTotalBytes: file.size });
           const imported = await importMedia({
-            source: staging, destination,
+            source: staging, destination, layout,
             files: [{ ...file, sourcePath: copied.path }]
           });
           if (!imported[0]?.ok) throw new Error(imported[0]?.error || 'Could not organize the copied file.');
+          const saved = await fs.stat(imported[0].outputPath);
+          if (!saved.isFile() || saved.size !== copied.size) {
+            throw new Error('The saved file could not be verified. Check the destination before retrying.');
+          }
           await fs.rm(staging, { recursive: true });
           results.push({ ...imported[0], id });
           completedBytes += file.size;
@@ -127,7 +216,10 @@ class PhoneReader {
         }
       }
       return results;
-    } finally { this.busy = false; }
+    } finally {
+      if (session) await session.close();
+      this.busy = false;
+    }
   }
 }
-module.exports = { PhoneReader, phoneOperation };
+module.exports = { PhoneReader, phoneOperation, createPhoneCopySession };

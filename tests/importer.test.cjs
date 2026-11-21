@@ -52,6 +52,22 @@ test('imports into type/date folders without overwriting duplicate names', async
   assert.equal(await fs.readFile(first[0].outputPath, 'utf8'), 'first');
 });
 
+test('flat layout saves into the chosen folder without overwriting', async (t) => {
+  const root = await fixture(t);
+  const source = path.join(root, 'source');
+  const destination = path.join(root, 'output');
+  await fs.mkdir(source);
+  await fs.writeFile(path.join(source, 'IMG_1.JPG'), 'photo');
+  const { files } = await scanMedia(source);
+  const request = { source, destination, files, layout: 'flat' };
+  const first = await importMedia(request);
+  const second = await importMedia(request);
+  assert.equal(first[0].ok, true);
+  assert.equal(second[0].ok, true);
+  assert.deepEqual(await fs.readdir(destination), ['IMG_1 (2).JPG', 'IMG_1.JPG']);
+  assert.equal(await fs.readFile(first[0].outputPath, 'utf8'), 'photo');
+});
+
 test('rejects media outside the chosen source folder', async (t) => {
   const root = await fixture(t);
   const source = path.join(root, 'source');
@@ -76,6 +92,7 @@ test('rejects media outside the chosen source folder', async (t) => {
 
 test('rejects malformed import requests', async () => {
   await assert.rejects(importMedia({ files: [] }), /Choose a destination/);
+  await assert.rejects(importMedia({ source: os.tmpdir(), destination: os.tmpdir(), files: [] }), /at least one media file/);
 });
 
 test('rejects a destination inside the source folder', async (t) => {

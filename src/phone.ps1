@@ -1,90 +1,53 @@
+param([switch]$Session)
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 try {
-  $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  if (-not $Session) { $request = [Console]::In.ReadToEnd() | ConvertFrom-Json }
   $shell = New-Object -ComObject Shell.Application
   $phones = @($shell.Namespace(17).Items() | Where-Object { $_.Path -match 'vid_05ac' -or $_.Name -eq 'Apple iPhone' })
   if ($phones.Count -eq 0) { throw 'No iPhone storage found. Unlock the phone, tap Trust, and reconnect the cable.' }
   if ($phones.Count -gt 1) { throw 'Connect only one iPhone, then try again.' }
   $phone = $phones[0]
-  if ($request.action -eq 'scan') {
-    $files = New-Object System.Collections.Generic.List[object]
-    $errors = New-Object System.Collections.Generic.List[string]
-    $scanStarted = [DateTime]::UtcNow
-    $script:publishedCount = 0
-    function PublishScanProgress {
-      if ($files.Count -le $script:publishedCount) { return }
-      $batch = @($files.ToArray() | Select-Object -Skip $script:publishedCount)
-      $script:publishedCount = $files.Count
-      [Console]::Out.WriteLine((@{
-        progress=$true;found=$files.Count
-        elapsedMs=[long]([DateTime]::UtcNow-$scanStarted).TotalMilliseconds
-        items=$batch
-      } | ConvertTo-Json -Depth 20 -Compress))
-    }
-    function Walk($folder, [string[]]$segments, [int]$depth) {
-      if ($depth -gt 12) { throw 'Phone folder nesting exceeds the supported depth.' }
-      foreach ($item in @($folder.Items())) {
-        $parts = @($segments) + @($item.Name)
-        if ($item.IsFolder) {
-          try { Walk $item.GetFolder $parts ($depth + 1) }
-          catch { $errors.Add(($parts -join '/') + ': ' + $_.Exception.Message) }
-          continue
-        }
-        # WPD often hides extensions in Name. Derive them from Shell's type
-        # rather than asking the provider for another per-file property.
-        $typeName = [string]$item.Type
-        $extensionMatch = [regex]::Match($typeName, '(?i)\b(JPEG|JPG|HEIC|HEIF|PNG|TIFF|TIF|GIF|BMP|WEBP|DNG|RAW|MOV|MP4|M4V|3GP|AVI|MKV)\b')
-        $filename = $item.Name
-        if ($extensionMatch.Success) {
-          $extension = '.' + $extensionMatch.Groups[1].Value.ToLowerInvariant()
-          if ([IO.Path]::GetExtension($filename) -eq '') { $filename += $extension }
-        } else {
-          $filename = $item.ExtendedProperty('System.FileName')
-          if (!$filename) { $filename = $item.Name }
-        }
-        $ext = [IO.Path]::GetExtension($filename).ToLowerInvariant()
-        $type = $null
-        if ($ext -in @('.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.gif','.bmp','.webp','.dng','.raw')) { $type = 'Photos' }
-        if ($ext -in @('.mov','.mp4','.m4v','.3gp','.avi','.mkv')) { $type = 'Videos' }
-        if (!$type) { continue }
-        if ($type -eq 'Photos') {
-          $date = $item.ExtendedProperty('System.Photo.DateTaken')
-          $dateSource = 'capture date'
-        } else {
-          $date = $item.ExtendedProperty('System.Media.DateEncoded')
-          $dateSource = 'encoded date'
-        }
-        if (!$date) { $date = $item.ExtendedProperty('System.DateModified'); $dateSource = 'device file date' }
-        $day = 'Unknown-date'
-        if ($date -is [datetime] -and $date.Year -ge 1970) { $day = $date.ToString('yyyy-MM-dd') }
-        $files.Add([pscustomobject]@{
-          name=$filename; segments=$parts; type=$type; date=$day
-          dateSource=$dateSource; size=0
-        })
-        if ($files.Count % 100 -eq 0) { PublishScanProgress }
-      }
-    }
-    Walk $phone.GetFolder @() 0
-    PublishScanProgress
-    [pscustomobject]@{files=@($files.ToArray());errors=@($errors.ToArray());device=$phone.Name} | ConvertTo-Json -Depth 20 -Compress
-  } elseif ($request.action -eq 'copy') {
+  $script:folderIndexCache = @{}
+  function CopyPhoneFile($copyRequest) {
     $current = $phone
-    foreach ($segment in $request.segments) {
-      $matches = @($current.GetFolder.Items() | Where-Object { $_.Name -ceq $segment })
-      if ($matches.Count -ne 1) { throw 'The selected file is missing or ambiguous. Read the iPhone again.' }
-      $current = $matches[0]
+    $traversed = New-Object System.Collections.Generic.List[string]
+    foreach ($segment in $copyRequest.segments) {
+      $folderKey = [string]::Join([char]31, $traversed.ToArray())
+      if (-not $script:folderIndexCache.ContainsKey($folderKey)) {
+        $index = [System.Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+        foreach ($item in $current.GetFolder.Items()) {
+          $name = [string]$item.Name
+          if (-not $index.ContainsKey($name)) {
+            $index.Add($name, (New-Object System.Collections.Generic.List[object]))
+          }
+          $index[$name].Add($item)
+        }
+        $script:folderIndexCache[$folderKey] = $index
+      }
+      $lookupName = if ($segment -is [string]) { $segment } else { [string]$segment.name }
+      $index = $script:folderIndexCache[$folderKey]
+      $candidates = @()
+      if ($index.ContainsKey($lookupName)) { $candidates = @($index[$lookupName]) }
+      if ($segment -isnot [string]) {
+        $candidates = @($candidates | Where-Object {
+          [string]$_.ExtendedProperty('System.FileName') -ceq $segment.filename
+        })
+      }
+      if ($candidates.Count -ne 1) { throw 'The selected file is missing or ambiguous. Read the iPhone again.' }
+      $current = $candidates[0]
+      $traversed.Add($lookupName)
     }
     if ($current.IsFolder) { throw 'Expected a media file.' }
     $size = $current.ExtendedProperty('System.Size')
     if ($null -eq $size) { $size = $current.Size }
-    if (([long]$request.size -gt 0 -and [long]$size -ne [long]$request.size) -or [long]$size -le 0) { throw 'The file size changed or is unavailable. Read the iPhone again.' }
+    if (([long]$copyRequest.size -gt 0 -and [long]$size -ne [long]$copyRequest.size) -or [long]$size -le 0) { throw 'The file size changed or is unavailable. Read the iPhone again.' }
     $filename = $current.ExtendedProperty('System.FileName')
     if (!$filename) { $filename = $current.Name }
-    $target = Join-Path $request.destination $filename
+    $target = Join-Path $copyRequest.destination $filename
     if (Test-Path -LiteralPath $target) { throw 'Staging file already exists.' }
-    $folder = $shell.Namespace([string]$request.destination)
+    $folder = $shell.Namespace([string]$copyRequest.destination)
     if (!$folder) { throw 'Staging folder is unavailable.' }
     $folder.CopyHere($current, 1556)
     $deadline = [DateTime]::UtcNow.AddMinutes(20)
@@ -106,10 +69,98 @@ try {
           if ($complete) { break }
         } catch { $complete = $false }
       }
-      Start-Sleep -Milliseconds 250
+      Start-Sleep -Milliseconds 100
     }
     if (!$complete) { throw 'Transfer timed out. The staging folder is preserved; reconnect and scan again.' }
-    [pscustomobject]@{path=$target;size=[long]$size} | ConvertTo-Json -Compress
+    return [pscustomobject]@{path=$target;size=[long]$size}
+  }
+  if ($Session) {
+    [Console]::Out.WriteLine('{"ready":true}')
+    while ($null -ne ($line = [Console]::In.ReadLine())) {
+      try {
+        $copyRequest = $line | ConvertFrom-Json
+        if ($copyRequest.action -ne 'copy') { throw 'Unknown phone operation.' }
+        $copyResult = CopyPhoneFile $copyRequest
+        [Console]::Out.WriteLine((@{result=$true;path=$copyResult.path;size=$copyResult.size} | ConvertTo-Json -Compress))
+      } catch {
+        [Console]::Out.WriteLine((@{error=$true;message=$_.Exception.Message} | ConvertTo-Json -Compress))
+      }
+    }
+  } elseif ($request.action -eq 'scan') {
+    $errors = New-Object System.Collections.Generic.List[string]
+    $scanStarted = [DateTime]::UtcNow
+    $script:batch = New-Object System.Collections.Generic.List[object]
+    $script:foundCount = 0
+    function PublishScanProgress {
+      if ($script:batch.Count -eq 0) { return }
+      [Console]::Out.WriteLine((@{
+        progress=$true;found=$script:foundCount
+        elapsedMs=[long]([DateTime]::UtcNow-$scanStarted).TotalMilliseconds
+        items=@($script:batch.ToArray())
+      } | ConvertTo-Json -Depth 20 -Compress))
+      $script:batch.Clear()
+    }
+    function Walk($folder, [string[]]$segments, [int]$depth) {
+      if ($depth -gt 12) { throw 'Phone folder nesting exceeds the supported depth.' }
+      # Enumerate lazily. Wrapping Items() in @() waits for the entire WPD folder
+      # before the first file can be processed or reported.
+      foreach ($item in $folder.Items()) {
+        $parts = @($segments) + @($item.Name)
+        if ($item.IsFolder) {
+          try { Walk $item.GetFolder $parts ($depth + 1) }
+          catch { $errors.Add(($parts -join '/') + ': ' + $_.Exception.Message) }
+          continue
+        }
+        try {
+        # Name often omits the real extension (for example IMG_1234.JPG).
+        # FileName preserves it, avoiding guesses such as .jpeg for a .JPG.
+        $filename = [string]$item.ExtendedProperty('System.FileName')
+        if (!$filename) {
+          $filename = [string]$item.Name
+          if ([IO.Path]::GetExtension($filename) -eq '') {
+            $typeName = [string]$item.Type
+            $extensionMatch = [regex]::Match($typeName, '(?i)\b(JPEG|JPG|HEIC|HEIF|PNG|TIFF|TIF|GIF|BMP|WEBP|DNG|RAW|MOV|MP4|M4V|3GP|AVI|MKV)\b')
+            if ($extensionMatch.Success) {
+              $extension = $extensionMatch.Groups[1].Value.ToLowerInvariant()
+              if ($extension -eq 'jpeg') { $extension = 'jpg' }
+              $filename += '.' + $extension
+            }
+          }
+        }
+        $ext = [IO.Path]::GetExtension($filename).ToLowerInvariant()
+        $type = $null
+        if ($ext -in @('.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.gif','.bmp','.webp','.dng','.raw')) { $type = 'Photos' }
+        if ($ext -in @('.mov','.mp4','.m4v','.3gp','.avi','.mkv')) { $type = 'Videos' }
+        if (!$type) { continue }
+        if ($type -eq 'Photos') {
+          $date = $item.ExtendedProperty('System.Photo.DateTaken')
+          $dateSource = 'capture date'
+        } else {
+          $date = $item.ExtendedProperty('System.Media.DateEncoded')
+          $dateSource = 'encoded date'
+        }
+        if (!$date) { $date = $item.ExtendedProperty('System.DateModified'); $dateSource = 'device file date' }
+        $day = 'Unknown-date'
+        if ($date -is [datetime] -and $date.Year -ge 1970) { $day = $date.ToString('yyyy-MM-dd') }
+        $file = [pscustomobject]@{
+          name=$filename
+          segments=@($segments) + @([pscustomobject]@{name=[string]$item.Name;filename=$filename})
+          type=$type; date=$day
+          dateSource=$dateSource; size=0
+        }
+        $script:batch.Add($file)
+        $script:foundCount++
+        if ($script:batch.Count -ge 100) { PublishScanProgress }
+        } catch {
+          $errors.Add(($parts -join '/') + ': ' + $_.Exception.Message)
+        }
+      }
+    }
+    Walk $phone.GetFolder @() 0
+    PublishScanProgress
+    [pscustomobject]@{count=$script:foundCount;errors=@($errors.ToArray());device=$phone.Name} | ConvertTo-Json -Depth 20 -Compress
+  } elseif ($request.action -eq 'copy') {
+    CopyPhoneFile $request | ConvertTo-Json -Compress
   } else { throw 'Unknown phone operation.' }
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)

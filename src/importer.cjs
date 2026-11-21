@@ -144,7 +144,7 @@ async function unusedDestination(directory, name) {
   }
 }
 
-async function copyOne(file, destinationRoot) {
+async function copyOne(file, destinationRoot, layout = 'organized') {
   if (!file || typeof file.sourcePath !== 'string' || !path.isAbsolute(file.sourcePath)) {
     throw new Error('Invalid source file.');
   }
@@ -152,7 +152,7 @@ async function copyOne(file, destinationRoot) {
   if (!type || type !== file.type) throw new Error('Unsupported media file.');
   if (file.date !== 'Unknown-date' && !/^\d{4}-\d{2}-\d{2}$/.test(file.date)) throw new Error('Invalid media date.');
 
-  const folder = path.join(destinationRoot, type, file.date);
+  const folder = layout === 'flat' ? destinationRoot : path.join(destinationRoot, type, file.date);
   await fs.mkdir(folder, { recursive: true });
   const target = await unusedDestination(folder, path.basename(file.sourcePath));
   await fs.copyFile(file.sourcePath, target, constants.COPYFILE_EXCL);
@@ -162,9 +162,11 @@ async function copyOne(file, destinationRoot) {
 async function importMedia(request, progress = () => {}) {
   if (!request || typeof request.destination !== 'string' ||
       !path.isAbsolute(request.destination) || typeof request.source !== 'string' ||
-      !path.isAbsolute(request.source) || !Array.isArray(request.files)) {
+      !path.isAbsolute(request.source) || !Array.isArray(request.files) || !request.files.length) {
     throw new Error('Choose a destination and at least one media file.');
   }
+  const layout = request.layout || 'organized';
+  if (layout !== 'flat' && layout !== 'organized') throw new Error('Invalid save layout.');
   const source = await fs.realpath(request.source);
   const results = [];
   const validFiles = [];
@@ -192,7 +194,7 @@ async function importMedia(request, progress = () => {}) {
   }
   for (const file of validFiles) {
     try {
-      const outputPath = await copyOne(file, destination);
+      const outputPath = await copyOne(file, destination, layout);
       results.push({ ok: true, name: path.basename(file.sourcePath), outputPath, type: file.type });
     } catch (error) {
       results.push({ ok: false, name: file && path.basename(file.sourcePath || ''), error: error.message });

@@ -3,5 +3,6 @@ release/
 release-*/
 dist/
 app-dist/
+build/*.bmp
 *.log
 .DS_Store

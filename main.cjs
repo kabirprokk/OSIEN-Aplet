@@ -18,6 +18,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
+    roundedCorners: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

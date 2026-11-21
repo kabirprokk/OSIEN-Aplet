@@ -13,11 +13,15 @@
   !define MUI_FINISHPAGE_RUN
   !define MUI_FINISHPAGE_RUN_TEXT "Launch OSIEN Memories"
   !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchMemories"
-
-  Function LaunchMemories
-    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" ""
-  FunctionEnd
 !endif
+
+!macro customHeader
+  !ifndef BUILD_UNINSTALLER
+    Function LaunchMemories
+      ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" ""
+    FunctionEnd
+  !endif
+!macroend
 
 !macro customWelcomePage
   Page custom MemoriesWelcomeCreate MemoriesWelcomeLeave

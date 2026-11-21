@@ -4,15 +4,16 @@
 !define MUI_INSTFILESPAGE_PROGRESSBAR "smooth"
 !define MUI_FINISHPAGE_TITLE "OSIEN Memories is ready"
 !define MUI_FINISHPAGE_TEXT "Installation is complete. Your private media workspace is ready."
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Launch OSIEN Memories"
-!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchMemories"
 !define MUI_UNFINISHPAGE_TITLE "OSIEN Memories was removed"
 !define MUI_UNFINISHPAGE_TEXT "The application has been removed. Your imported photos and videos have been left untouched."
 
 !include "nsDialogs.nsh"
 
 !ifndef BUILD_UNINSTALLER
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_TEXT "Launch OSIEN Memories"
+  !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchMemories"
+
   Function LaunchMemories
     ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" ""
   FunctionEnd

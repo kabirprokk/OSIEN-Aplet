@@ -2,6 +2,9 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const { scanMedia, importMedia } = require('./src/importer.cjs');
 const { detectAppleDevices } = require('./src/apple-device.cjs');
+const { PhoneReader } = require('./src/phone.cjs');
+const phone = new PhoneReader();
+const destinations = new Set();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -26,12 +29,21 @@ ipcMain.handle('choose-folder', async (_event, title) => {
     title,
     properties: ['openDirectory', 'createDirectory']
   });
-  return result.canceled ? null : result.filePaths[0];
+  if (result.canceled) return null;
+  destinations.add(result.filePaths[0]);
+  return result.filePaths[0];
 });
 
 ipcMain.handle('scan-media', async (_event, source) => scanMedia(source));
 ipcMain.handle('import-media', async (_event, request) => importMedia(request));
 ipcMain.handle('detect-apple-device', () => detectAppleDevices());
+ipcMain.handle('scan-phone', () => phone.scan());
+ipcMain.handle('import-phone', (event, request) => {
+  if (!destinations.has(request.destination)) throw new Error('Choose a destination first.');
+  return phone.import(request.ids, request.destination, progress => {
+    if (!event.sender.isDestroyed()) event.sender.send('phone-progress', progress);
+  });
+});
 ipcMain.handle('open-folder', async (_event, folder) => {
   const error = await shell.openPath(folder);
   return error || null;

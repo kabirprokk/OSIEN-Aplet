@@ -37,6 +37,7 @@
       "node_modules/exifr/**/*",
       "package.json"
     ],
+    "asarUnpack": ["src/phone.ps1"],
     "win": {
       "target": [
         {

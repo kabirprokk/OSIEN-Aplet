@@ -150,7 +150,7 @@ async function copyOne(file, destinationRoot) {
   }
   const type = classify(file.sourcePath);
   if (!type || type !== file.type) throw new Error('Unsupported media file.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(file.date)) throw new Error('Invalid media date.');
+  if (file.date !== 'Unknown-date' && !/^\d{4}-\d{2}-\d{2}$/.test(file.date)) throw new Error('Invalid media date.');
 
   const folder = path.join(destinationRoot, type, file.date);
   await fs.mkdir(folder, { recursive: true });

@@ -12,6 +12,7 @@
 .bottom-bar{display:flex;align-items:center;gap:10px;padding-top:17px}.selection{margin-right:auto;display:flex;flex-direction:column;gap:3px}.selection strong{font-size:12px}.selection span{font-size:10px;color:#839087;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.import-button{min-width:128px}
 @media(max-width:900px){.app{padding:20px}.source-card{padding:17px}.list-head,.file-row{grid-template-columns:30px minmax(150px,1fr) 80px 100px 64px}.file-area{min-height:180px}.bottom-bar{gap:7px}}
 .header-actions{display:flex;align-items:center;gap:10px}.theme-toggle{border:1px solid #dfe6e1;border-radius:7px;background:#fff;color:#53625a;padding:8px 11px;font:600 11px "Segoe UI",Arial,sans-serif;cursor:pointer}.theme-toggle:hover{background:#f0f4f1}
+.selection span{white-space:normal;overflow-wrap:anywhere;max-height:100px;overflow:auto}.source-card>div>button{margin-bottom:4px}
 html[data-theme="dark"]{color:#e7eee9;background:#151a17;color-scheme:dark}
 html[data-theme="dark"] body{background:#151a17;color:#e7eee9}
 html[data-theme="dark"] .brand p,html[data-theme="dark"] .source-copy p,html[data-theme="dark"] .selected-path,html[data-theme="dark"] .steps{color:#9aa9a0}

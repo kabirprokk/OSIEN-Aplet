@@ -15,9 +15,11 @@ OSIEN-Aplet is a local-first Windows desktop app for selecting accessible iPhone
 
 ## iPhone access notes
 
-Connect and unlock the iPhone, accept **Trust This Computer**, and use Apple's Windows device support. Choose the iPhone's DCIM/media folder only if Windows exposes it in the folder picker. Some Windows versions expose iPhone media as a portable-device namespace rather than a normal folder; this first release does not implement Microsoft's WPD COM interface and cannot browse that namespace itself. If the folder is not selectable, import from a folder Windows has copied/exported the media to. No third-party driver is installed or replaced.
+Connect and unlock the iPhone, accept **Trust This Computer**, then click **Read iPhone**. The app enumerates Windows' portable-device Shell namespace directly, including Internal Storage. Select media, choose a local destination, and click **Import selected**. Keep the phone unlocked and connected. Only media exposed by Windows is available; iCloud-only originals must be downloaded onto the phone first. Connect one iPhone at a time.
 
-The connection indicator only reports what Windows Plug and Play lists; it does not confirm that the photo library is readable.
+Transfers use Windows Shell's portable-device copy into a unique staging folder. The app checks the resulting size and exclusive read access before organizing the copy. Interrupted transfers retain staging files and stop the batch; failures remain selected. Originals are never deleted. No third-party driver is installed or replaced.
+
+The connection indicator reports Windows Plug and Play status. **Read iPhone** tests actual storage access. Scanning large libraries can take several minutes. Device-reported capture/encoded dates are preferred; missing dates use the device file date, or `Unknown-date` when none is supplied.
 
 Date fallback can be inaccurate when the source file timestamp changed during transfer. The app labels whether its date came from metadata or the file timestamp.
 

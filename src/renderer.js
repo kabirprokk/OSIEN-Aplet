@@ -1,5 +1,35 @@
 const state = { source: null, destination: null, files: [], selected: new Set(), filter: 'all' };
 const $ = (id) => document.getElementById(id);
+let busy = false;
+function setBusy(value) {
+  busy = value;
+  for (const id of ['read-phone', 'choose-source', 'choose-destination']) $(id).disabled = value;
+  updateCounts();
+}
+window.aplet.onPhoneProgress(({ name, completed, total }) => {
+  $('status').textContent = `Importing ${completed + 1}/${total}: ${name}`;
+});
+$('read-phone').addEventListener('click', async () => {
+  if (busy) return;
+  setBusy(true);
+  state.files = [];
+  state.selected.clear();
+  state.source = null;
+  render();
+  $('status').textContent = 'Reading iPhone… Keep it unlocked.';
+  try {
+    const result = await window.aplet.scanPhone();
+    state.source = 'iphone';
+    state.files = result.files;
+    $('source-path').textContent = result.device;
+    $('status').textContent = result.files.length
+      ? `${result.files.length} media files${result.errors.length ? ` · ${result.errors.length} folders could not be read` : ''}`
+      : 'No accessible media. Unlock the phone and allow photo access, then try again.';
+    render();
+  } catch (error) {
+    $('status').textContent = error.message;
+  } finally { setBusy(false); }
+});
 
 function applyTheme(theme) {
   const dark = ApletTheme.resolveTheme(theme, false) === 'dark';
@@ -35,7 +65,7 @@ function updateCounts() {
   $('count-photos').textContent = state.files.filter((file) => file.type === 'Photos').length;
   $('count-videos').textContent = state.files.filter((file) => file.type === 'Videos').length;
   $('selected-count').textContent = `${state.selected.size} selected`;
-  $('import-button').disabled = state.selected.size === 0 || !state.destination;
+  $('import-button').disabled = busy || state.selected.size === 0 || !state.destination;
   $('choose-destination').textContent = state.destination ? 'Change destination' : 'Choose destination';
 }
 
@@ -111,7 +141,7 @@ function checkAppleDevice() {
       const healthy = device.status.toLowerCase() === 'ok';
       status.classList.add(healthy ? 'connected' : 'error');
       message.textContent = healthy
-        ? `Apple device detected by Windows: ${device.name}. Choose a folder Windows exposes; direct phone browsing is not available yet.`
+        ? 'Apple device connected. Click Read iPhone.'
         : `Apple device needs attention: ${device.name} (${device.status})`;
     } else {
       status.classList.add('error');
@@ -137,9 +167,11 @@ window.addEventListener('focus', () => {
 });
 
 $('choose-source').addEventListener('click', async () => {
+  if (busy) return;
   const folder = await window.aplet.chooseFolder('Choose iPhone media folder');
   if (!folder) return;
   $('status').textContent = 'Scanning…';
+  setBusy(true);
   $('choose-source').disabled = true;
   try {
     const result = await window.aplet.scanMedia(folder);
@@ -157,7 +189,7 @@ $('choose-source').addEventListener('click', async () => {
   } catch (error) {
     $('status').textContent = error.message;
   } finally {
-    $('choose-source').disabled = false;
+    setBusy(false);
   }
 });
 
@@ -190,23 +222,29 @@ document.querySelectorAll('.filter').forEach((button) => button.addEventListener
 $('search').addEventListener('input', render);
 
 $('import-button').addEventListener('click', async () => {
+  if (busy) return;
   const files = state.files.filter((file) => state.selected.has(file.id));
   if (!files.length || !state.destination) return;
+  setBusy(true);
   $('import-button').disabled = true;
   $('choose-source').disabled = true;
   $('choose-destination').disabled = true;
   $('status').textContent = `Importing ${files.length} files…`;
   try {
-    const results = await window.aplet.importMedia({
+    const results = state.source === 'iphone'
+      ? await window.aplet.importPhone({ destination: state.destination, ids: files.map(file => file.id) })
+      : await window.aplet.importMedia({
       source: state.source,
       destination: state.destination,
       files
     });
     const copied = results.filter((result) => result.ok);
-    const failed = results.length - copied.length;
-    state.selected.clear();
+    const failed = files.length - copied.length;
+    if (state.source === 'iphone') {
+      for (const result of copied) state.selected.delete(result.id);
+    } else if (!failed) state.selected.clear();
     $('status').textContent = failed
-      ? `${copied.length} imported · ${failed} failed`
+      ? `${copied.length} imported · ${failed} not imported. ${results.find(result => !result.ok)?.error || ''}`
       : `${copied.length} files imported`;
     render();
     if (copied.length) {
@@ -223,6 +261,7 @@ $('import-button').addEventListener('click', async () => {
   } catch (error) {
     $('status').textContent = error.message;
   } finally {
+    setBusy(false);
     $('choose-source').disabled = false;
     $('choose-destination').disabled = false;
     updateCounts();

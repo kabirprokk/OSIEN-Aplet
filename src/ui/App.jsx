@@ -57,6 +57,7 @@ export default function App() {
   const [destination, setDestination] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [filter, setFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('newest');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState(null);
@@ -119,8 +120,12 @@ export default function App() {
   const visible = useMemo(() => files.filter((file) =>
     (filter === 'all' || file.type === filter) &&
     file.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
-  ).sort((a, b) => (a.date === 'Unknown-date' ? 1 : b.date === 'Unknown-date' ? -1 : b.date.localeCompare(a.date)) || a.name.localeCompare(b.name)),
-  [files, filter, query]);
+  ).sort((a, b) => {
+    if (a.date === 'Unknown-date' && b.date !== 'Unknown-date') return 1;
+    if (b.date === 'Unknown-date' && a.date !== 'Unknown-date') return -1;
+    const dateOrder = sortOrder === 'newest' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date);
+    return dateOrder || a.name.localeCompare(b.name);
+  }), [files, filter, query, sortOrder]);
   const groups = useMemo(() => {
     const result = new Map();
     for (const file of visible) {
@@ -283,7 +288,7 @@ export default function App() {
             <div className="scan-count"><strong>{files.length.toLocaleString()}</strong><span>files found</span></div>
             <div className="scan-progress-copy"><strong>{progress.label}</strong><small>{progress.detail}</small></div>
             <span className="live-indicator"><i /> LIVE</span>
-          </div> : <div className="progress-content"><div className="progress-top"><strong>{progress.label}</strong><span>{progress.kind === 'import' && progress.value == null ? 'WORKING' : progress.kind === 'complete' ? 'DONE' : ''}</span></div>{progress.kind === 'import' && <div className="progress-activity"><i /></div>}<small>{progress.detail}</small></div>}
+          </div> : <div className="progress-content"><div className="progress-top"><strong>{progress.label}</strong><span>{progress.kind === 'import' && progress.value == null ? 'WORKING' : Number.isFinite(progress.value) && progress.kind === 'import' ? `${progress.value}%` : progress.kind === 'complete' ? 'DONE' : ''}</span></div>{progress.kind === 'import' && progress.value == null ? <div className="progress-activity"><i /></div> : progress.kind === 'import' ? <progress className="progress-track" max="100" value={progress.value} aria-label={progress.label} /> : null}<small>{progress.detail}</small></div>}
         </section>}
 
         <section className="library-heading">
@@ -296,7 +301,7 @@ export default function App() {
           <div className="filter-tabs" role="tablist">{[['all','Everything',Image],['Photos','Photos',FileImage],['Videos','Videos',Film]].map(([key,label,Icon]) => <button role="tab" aria-selected={filter===key} className={filter===key?'selected':''} key={key} onClick={() => setFilter(key)}><Icon size={14} />{label}<span>{counts[key]}</span></button>)}</div>
           <label className="search-box"><Search size={15} /><input id="library-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your library" /><kbd>Ctrl K</kbd></label>
         </section>
-        <div className="selection-toolbar"><div className="selection-toggle"><TickBox checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false} onChange={toggleAll} label="Select all visible media" disabled={busy || !visible.length} /><button onClick={() => toggleAll(!allVisibleSelected)} disabled={busy || !visible.length}>{allVisibleSelected ? 'Deselect all' : 'Select all'}</button><span>·</span><span>{selected.size.toLocaleString()} selected</span></div><span className="sort-label">Newest first <ChevronDown size={13} /></span></div>
+        <div className="selection-toolbar"><div className="selection-toggle"><TickBox checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false} onChange={toggleAll} label="Select all visible media" disabled={busy || !visible.length} /><button onClick={() => toggleAll(!allVisibleSelected)} disabled={busy || !visible.length}>{allVisibleSelected ? 'Deselect all' : 'Select all'}</button><span>·</span><span>{selected.size.toLocaleString()} selected</span></div><button className="sort-label" onClick={() => setSortOrder(old => old === 'newest' ? 'oldest' : 'newest')} aria-label="Change media sort order">{sortOrder === 'newest' ? 'Newest first' : 'Oldest first'} <ChevronDown size={14} /></button></div>
 
         <section className="media-list" aria-label="Media files">
           {!files.length && busy ? <LibrarySkeleton /> : !files.length && operation === null && progress?.kind === 'complete' ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>No media found</h3><p>The scan completed, but no accessible photos or videos were found.</p><button className="button ghost" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Scan again</button></div> : !files.length && device.state === 'error' ? <div className="empty-library"><div className="empty-art"><Smartphone size={26} /></div><h3>iPhone not connected</h3><p>Unlock your iPhone, connect it to this PC, and tap “Trust This Computer.”</p><button className="button primary" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Try connection again</button></div> : !files.length ? <div className="empty-library"><div className="empty-art"><Image size={28} /></div><h3>Your library starts here</h3><p>Connect your iPhone and read its media, or open a folder from this PC.</p><button className="button primary" onClick={scanPhone} disabled={busy}><Smartphone size={15} /> Read iPhone</button></div> :

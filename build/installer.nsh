@@ -38,15 +38,18 @@ Function MemoriesWelcomeCreate
   ${EndIf}
   ${NSD_CreateLabel} 0 12u 100% 26u "Welcome to OSIEN Memories"
   Pop $1
-  ${NSD_SetFont} $1 18 700
+  CreateFont $2 "Segoe UI" 18 700
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "F5F7FA" "101214"
   ${NSD_CreateLabel} 0 48u 100% 28u "Bring your iPhone photos and videos into focus."
   Pop $1
-  ${NSD_SetFont} $1 11 400
+  CreateFont $2 "Segoe UI" 11 400
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "00D9E8" "101214"
   ${NSD_CreateLabel} 0 91u 100% 54u "This setup will install OSIEN Memories on your PC.$\r$\n$\r$\nYour original iPhone media stays untouched."
   Pop $1
-  ${NSD_SetFont} $1 10 400
+  CreateFont $2 "Segoe UI" 10 400
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "A1AAB2" "101214"
   nsDialogs::Show
 FunctionEnd
@@ -62,15 +65,18 @@ Function un.MemoriesUninstallWelcomeCreate
   ${EndIf}
   ${NSD_CreateLabel} 0 12u 100% 26u "Remove OSIEN Memories?"
   Pop $1
-  ${NSD_SetFont} $1 18 700
+  CreateFont $2 "Segoe UI" 18 700
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "F5F7FA" "101214"
   ${NSD_CreateLabel} 0 48u 100% 28u "Your imported memories are yours to keep."
   Pop $1
-  ${NSD_SetFont} $1 11 400
+  CreateFont $2 "Segoe UI" 11 400
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "00D9E8" "101214"
   ${NSD_CreateLabel} 0 91u 100% 54u "This removes the OSIEN Memories application.$\r$\n$\r$\nPhotos and videos already imported will not be deleted."
   Pop $1
-  ${NSD_SetFont} $1 10 400
+  CreateFont $2 "Segoe UI" 10 400
+  SendMessage $1 ${WM_SETFONT} $2 1
   SetCtlColors $1 "A1AAB2" "101214"
   nsDialogs::Show
 FunctionEnd

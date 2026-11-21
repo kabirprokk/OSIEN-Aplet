@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const { scanMedia, importMedia } = require('./src/importer.cjs');
+const { detectAppleDevices } = require('./src/apple-device.cjs');
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -30,6 +31,7 @@ ipcMain.handle('choose-folder', async (_event, title) => {
 
 ipcMain.handle('scan-media', async (_event, source) => scanMedia(source));
 ipcMain.handle('import-media', async (_event, request) => importMedia(request));
+ipcMain.handle('detect-apple-device', () => detectAppleDevices());
 ipcMain.handle('open-folder', async (_event, folder) => {
   const error = await shell.openPath(folder);
   return error || null;

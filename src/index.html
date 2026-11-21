@@ -11,7 +11,10 @@
     <main class="app">
       <header class="topbar">
         <div class="brand"><span class="brand-mark">A</span><div><h1>OSIEN-Aplet</h1><p>iPhone media importer</p></div></div>
-        <span class="local-badge"><span></span> Files stay on this PC</span>
+        <div class="header-actions">
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+          <span class="local-badge"><span></span> Files stay on this PC</span>
+        </div>
       </header>
 
       <section class="steps" aria-label="Import steps">
@@ -29,6 +32,11 @@
           <p>Connect and unlock your iPhone. Tap <strong>Trust</strong> if asked, then select its DCIM folder or another media folder Windows can access.</p>
         </div>
         <button class="button primary" id="choose-source">Choose folder</button>
+        <div class="connection-status" id="connection-status" role="status" aria-live="polite">
+          <span class="connection-dot"></span>
+          <span id="connection-message">Checking for iPhone…</span>
+          <button class="text-button" id="check-device">Check again</button>
+        </div>
         <div class="selected-path" id="source-path">No folder selected</div>
       </section>
 
@@ -59,6 +67,7 @@
         <button class="button primary import-button" id="import-button" disabled>Import selected</button>
       </footer>
     </main>
+    <script src="./theme.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

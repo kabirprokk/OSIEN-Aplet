@@ -1,6 +1,6 @@
 {
   "name": "osien-aplet",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A clean, local-first Windows iPhone media importer and organizer.",
   "author": "Kabir Prokk",
   "main": "main.cjs",

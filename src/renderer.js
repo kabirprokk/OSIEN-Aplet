@@ -1,6 +1,21 @@
 const state = { source: null, destination: null, files: [], selected: new Set(), filter: 'all' };
 const $ = (id) => document.getElementById(id);
 
+function applyTheme(theme) {
+  const dark = ApletTheme.resolveTheme(theme, false) === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('theme-toggle').textContent = dark ? 'Light mode' : 'Dark mode';
+  $('theme-toggle').setAttribute('aria-pressed', String(dark));
+}
+
+const savedTheme = localStorage.getItem('aplet-theme');
+applyTheme(ApletTheme.resolveTheme(savedTheme, window.matchMedia('(prefers-color-scheme: dark)').matches));
+$('theme-toggle').addEventListener('click', () => {
+  const nextTheme = ApletTheme.nextTheme(document.documentElement.dataset.theme);
+  localStorage.setItem('aplet-theme', nextTheme);
+  applyTheme(nextTheme);
+});
+
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -73,6 +88,53 @@ function updateSelectAll(files = visibleFiles()) {
   selectAll.checked = files.length > 0 && files.every((file) => state.selected.has(file.id));
   selectAll.indeterminate = files.some((file) => state.selected.has(file.id)) && !selectAll.checked;
 }
+
+function checkAppleDevice() {
+  const status = $('connection-status');
+  const message = $('connection-message');
+  const button = $('check-device');
+  if (button.disabled) return Promise.resolve();
+  status.classList.remove('connected', 'error');
+  button.disabled = true;
+  message.textContent = 'Checking for iPhone…';
+  return Promise.resolve()
+    .then(() => window.aplet.detectAppleDevice())
+    .then((result) => {
+    if (!result.supported) {
+      status.classList.add('error');
+      message.textContent = 'iPhone detection is available on Windows only.';
+    } else if (result.error) {
+      status.classList.add('error');
+      message.textContent = result.error;
+    } else if (result.devices.length) {
+      const device = result.devices[0];
+      const healthy = device.status.toLowerCase() === 'ok';
+      status.classList.add(healthy ? 'connected' : 'error');
+      message.textContent = healthy
+        ? `Apple device detected by Windows: ${device.name}. Choose a folder Windows exposes; direct phone browsing is not available yet.`
+        : `Apple device needs attention: ${device.name} (${device.status})`;
+    } else {
+      status.classList.add('error');
+      message.textContent = 'No iPhone found. Check the cable, unlock and trust this PC, then check the Apple driver.';
+    }
+    })
+    .finally(() => {
+    button.disabled = false;
+    });
+}
+
+function reportDeviceCheckFailure(error) {
+  $('connection-status').classList.add('error');
+  $('connection-message').textContent = 'Could not check for an iPhone.';
+  console.error('Apple device check failed:', error);
+}
+
+$('check-device').addEventListener('click', () => {
+  checkAppleDevice().catch(reportDeviceCheckFailure);
+});
+window.addEventListener('focus', () => {
+  checkAppleDevice().catch(reportDeviceCheckFailure);
+});
 
 $('choose-source').addEventListener('click', async () => {
   const folder = await window.aplet.chooseFolder('Choose iPhone media folder');
@@ -168,3 +230,4 @@ $('import-button').addEventListener('click', async () => {
 });
 
 render();
+checkAppleDevice().catch(reportDeviceCheckFailure);

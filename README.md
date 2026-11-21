@@ -9,11 +9,15 @@ OSIEN-Aplet is a local-first Windows desktop app for selecting accessible iPhone
 - Previews the file list, filters by photo/video, searches, and supports selection.
 - Copies selected files without overwriting existing files.
 - Organizes output as `Photos/YYYY-MM-DD/` and `Videos/YYYY-MM-DD/`.
+- Checks whether Windows reports a connected Apple iPhone in its Plug and Play device list.
+- Includes a remembered light/dark appearance toggle and follows the Windows theme on first launch.
 - Keeps file data on the PC; no accounts, telemetry, or cloud upload.
 
 ## iPhone access notes
 
 Connect and unlock the iPhone, accept **Trust This Computer**, and use Apple's Windows device support. Choose the iPhone's DCIM/media folder only if Windows exposes it in the folder picker. Some Windows versions expose iPhone media as a portable-device namespace rather than a normal folder; this first release does not implement Microsoft's WPD COM interface and cannot browse that namespace itself. If the folder is not selectable, import from a folder Windows has copied/exported the media to. No third-party driver is installed or replaced.
+
+The connection indicator only reports what Windows Plug and Play lists; it does not confirm that the photo library is readable.
 
 Date fallback can be inaccurate when the source file timestamp changed during transfer. The app labels whether its date came from metadata or the file timestamp.
 

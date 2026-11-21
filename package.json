@@ -1,6 +1,6 @@
 {
   "name": "osien-memories",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A private, local-first Windows iPhone media studio and organizer.",
   "author": "OSIEN",
   "main": "main.cjs",

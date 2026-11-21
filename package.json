@@ -2,7 +2,7 @@
   "name": "osien-aplet",
   "version": "0.0.1",
   "description": "A private, local-first Windows iPhone media studio and organizer.",
-  "author": "Kabir Prokk",
+  "author": "OSIEN",
   "main": "main.cjs",
   "private": true,
   "license": "MIT",

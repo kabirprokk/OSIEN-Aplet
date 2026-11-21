@@ -1,0 +1,61 @@
+{
+  "name": "osien-aplet",
+  "version": "0.1.0",
+  "description": "A clean, local-first Windows iPhone media importer and organizer.",
+  "author": "Kabir Prokk",
+  "main": "main.cjs",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --win dir"
+  },
+  "dependencies": {
+    "exifr": "^7.1.3"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.1"
+  },
+  "overrides": {
+    "minimatch@^9.0.0": "^11.0.9",
+    "minimatch@^10.0.0": "^11.0.9"
+  },
+  "build": {
+    "appId": "com.osien.aplet",
+    "productName": "OSIEN-Aplet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "src/**/*",
+      "src/importer.cjs",
+      "node_modules/exifr/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OSIEN-Aplet"
+    }
+  },
+  "allowScripts": {
+    "electron@39.8.10": true
+  }
+}

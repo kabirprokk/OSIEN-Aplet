@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self'">
+    <title>OSIEN-Aplet</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">A</span><div><h1>OSIEN-Aplet</h1><p>iPhone media importer</p></div></div>
+        <span class="local-badge"><span></span> Files stay on this PC</span>
+      </header>
+
+      <section class="steps" aria-label="Import steps">
+        <div class="step active" id="step-source"><b>1</b><span>Choose source</span></div>
+        <i></i>
+        <div class="step" id="step-review"><b>2</b><span>Review files</span></div>
+        <i></i>
+        <div class="step" id="step-destination"><b>3</b><span>Choose destination</span></div>
+      </section>
+
+      <section class="source-card">
+        <div class="source-copy">
+          <div class="eyebrow">SOURCE</div>
+          <h2>Choose your iPhone media folder</h2>
+          <p>Connect and unlock your iPhone. Tap <strong>Trust</strong> if asked, then select its DCIM folder or another media folder Windows can access.</p>
+        </div>
+        <button class="button primary" id="choose-source">Choose folder</button>
+        <div class="selected-path" id="source-path">No folder selected</div>
+      </section>
+
+      <section class="toolbar">
+        <div class="filters" role="tablist" aria-label="Filter files">
+          <button class="filter selected" data-filter="all">All <span id="count-all">0</span></button>
+          <button class="filter" data-filter="Photos">Photos <span id="count-photos">0</span></button>
+          <button class="filter" data-filter="Videos">Videos <span id="count-videos">0</span></button>
+        </div>
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a file" aria-label="Find a file"></label>
+      </section>
+
+      <section class="file-area" aria-live="polite">
+        <div class="empty-state" id="empty">
+          <div class="empty-icon">▧</div>
+          <h3>No files to show</h3>
+          <p>Choose a source folder to find photos and videos.</p>
+        </div>
+        <div class="file-list hidden" id="file-list">
+          <div class="list-head"><span class="check-wrap"><input type="checkbox" id="select-all" aria-label="Select all visible files"></span><span>NAME</span><span>TYPE</span><span>DATE</span><span>SIZE</span></div>
+          <div id="file-rows"></div>
+        </div>
+      </section>
+
+      <footer class="bottom-bar">
+        <div class="selection"><strong id="selected-count">0 selected</strong><span id="status">Ready</span></div>
+        <button class="button secondary" id="choose-destination">Choose destination</button>
+        <button class="button primary import-button" id="import-button" disabled>Import selected</button>
+      </footer>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

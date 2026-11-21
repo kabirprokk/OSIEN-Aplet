@@ -193,7 +193,7 @@ async function importMedia(request, progress = () => {}) {
   for (const file of validFiles) {
     try {
       const outputPath = await copyOne(file, destination);
-      results.push({ ok: true, name: path.basename(file.sourcePath), outputPath });
+      results.push({ ok: true, name: path.basename(file.sourcePath), outputPath, type: file.type });
     } catch (error) {
       results.push({ ok: false, name: file && path.basename(file.sourcePath || ''), error: error.message });
     }

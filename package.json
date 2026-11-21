@@ -1,5 +1,5 @@
 {
-  "name": "osien-aplet",
+  "name": "osien-memories",
   "version": "0.0.1",
   "description": "A private, local-first Windows iPhone media studio and organizer.",
   "author": "OSIEN",
@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "build": "vite build",
-    "icons": "node scripts/create-icon.mjs",
+    "icons": "node scripts/create-icon.mjs && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-installer-assets.ps1",
     "start": "npm run build && electron .",
     "test": "node --test",
     "dist": "npm run build && npm run icons && electron-builder --win nsis",
@@ -33,7 +33,7 @@
   },
   "build": {
     "appId": "com.osien.aplet",
-    "productName": "OSIEN-Aplet",
+    "productName": "OSIEN Memories",
     "directories": {
       "output": "release"
     },
@@ -63,9 +63,15 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerIcon": "src/assets/osien-logo.ico",
+      "uninstallerIcon": "src/assets/osien-logo.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OSIEN-Aplet"
+      "shortcutName": "OSIEN Memories"
     }
   },
   "allowScripts": {

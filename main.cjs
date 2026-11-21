@@ -12,7 +12,7 @@ function createWindow() {
     height: 760,
     minWidth: 920,
     minHeight: 680,
-    title: 'OSIEN-Aplet',
+    title: 'OSIEN Memories',
     backgroundColor: '#101214',
     icon: path.join(__dirname, 'src', 'assets', 'osien-logo.png'),
     frame: false,

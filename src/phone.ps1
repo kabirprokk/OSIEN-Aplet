@@ -12,9 +12,19 @@ try {
     $files = New-Object System.Collections.Generic.List[object]
     $errors = New-Object System.Collections.Generic.List[string]
     $scanStarted = [DateTime]::UtcNow
+    $script:publishedCount = 0
+    function PublishScanProgress {
+      if ($files.Count -le $script:publishedCount) { return }
+      $batch = @($files.ToArray() | Select-Object -Skip $script:publishedCount)
+      $script:publishedCount = $files.Count
+      [Console]::Out.WriteLine((@{
+        progress=$true;found=$files.Count
+        elapsedMs=[long]([DateTime]::UtcNow-$scanStarted).TotalMilliseconds
+        items=$batch
+      } | ConvertTo-Json -Depth 20 -Compress))
+    }
     function Walk($folder, [string[]]$segments, [int]$depth) {
       if ($depth -gt 12) { throw 'Phone folder nesting exceeds the supported depth.' }
-      [Console]::Out.WriteLine((@{progress=$true;found=$files.Count;elapsedMs=[long]([DateTime]::UtcNow-$scanStarted).TotalMilliseconds} | ConvertTo-Json -Compress))
       foreach ($item in @($folder.Items())) {
         $parts = @($segments) + @($item.Name)
         if ($item.IsFolder) {
@@ -53,12 +63,11 @@ try {
           name=$filename; segments=$parts; type=$type; date=$day
           dateSource=$dateSource; size=0
         })
-        if ($files.Count % 100 -eq 0) {
-          [Console]::Out.WriteLine((@{progress=$true;found=$files.Count;elapsedMs=[long]([DateTime]::UtcNow-$scanStarted).TotalMilliseconds} | ConvertTo-Json -Compress))
-        }
+        if ($files.Count % 100 -eq 0) { PublishScanProgress }
       }
     }
     Walk $phone.GetFolder @() 0
+    PublishScanProgress
     [pscustomobject]@{files=@($files.ToArray());errors=@($errors.ToArray());device=$phone.Name} | ConvertTo-Json -Depth 20 -Compress
   } elseif ($request.action -eq 'copy') {
     $current = $phone

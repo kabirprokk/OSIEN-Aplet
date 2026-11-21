@@ -1,6 +1,6 @@
-# OSIEN-Aplet
+# OSIEN Memories
 
-OSIEN-Aplet is a local-first Windows desktop app for selecting accessible iPhone media, reviewing it, and copying it into date/type folders.
+OSIEN Memories is a local-first Windows desktop app for selecting accessible iPhone media, reviewing it, and copying it into date/type folders.
 
 ## What it does
 

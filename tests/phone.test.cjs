@@ -36,6 +36,20 @@ test('phone import resolves opaque IDs to server-owned paths and copies without 
   await assert.rejects(reader.import(['forged-id'], destination), /Read the iPhone again/);
 });
 
+test('phone scan streams discovered media with stable opaque IDs and no source paths', async () => {
+  const streamed = [];
+  const reader = new PhoneReader(async (_request, progress) => {
+    const discovered = { ...media, segments: media.segments };
+    progress({ found: 1, elapsedMs: 20, items: [discovered] });
+    return { device: 'test phone', files: [discovered], errors: [] };
+  });
+  const result = await reader.scan(event => streamed.push(event));
+  assert.equal(streamed[0].files.length, 1);
+  assert.equal(streamed[0].files[0].id, result.files[0].id);
+  assert.equal(streamed[0].files[0].segments, undefined);
+  assert.equal(reader.files.get(result.files[0].id).segments.length, media.segments.length);
+});
+
 test('a failed transfer stops the batch, preserves staging, and allows another scan', async t => {
   const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'aplet-phone-test-'));
   t.after(() => fs.rm(destination, { recursive: true, force: true }));

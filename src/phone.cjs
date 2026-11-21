@@ -55,8 +55,24 @@ class PhoneReader {
     this.busy = true;
     this.files.clear();
     try {
-      const result = await this.operation({ action: 'scan' }, progress);
-      const files = result.files.map(file => ({ ...file, id: randomUUID() }));
+      const idsByPath = new Map();
+      const idFor = file => {
+        const key = JSON.stringify(file.segments);
+        if (!idsByPath.has(key)) idsByPath.set(key, randomUUID());
+        return idsByPath.get(key);
+      };
+      const result = await this.operation({ action: 'scan' }, event => {
+        const discovered = (event.items || []).map(file => {
+          const id = idFor(file);
+          const stored = { ...file, id };
+          this.files.set(id, stored);
+          const { segments, ...publicFile } = stored;
+          return publicFile;
+        });
+        progress({ ...event, files: discovered });
+      });
+      const files = result.files.map(file => ({ ...file, id: idFor(file) }));
+      this.files.clear();
       for (const file of files) this.files.set(file.id, file);
       return { ...result, files: files.map(({ segments, ...file }) => file) };
     } finally { this.busy = false; }

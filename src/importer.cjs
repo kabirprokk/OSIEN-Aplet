@@ -159,7 +159,7 @@ async function copyOne(file, destinationRoot) {
   return target;
 }
 
-async function importMedia(request) {
+async function importMedia(request, progress = () => {}) {
   if (!request || typeof request.destination !== 'string' ||
       !path.isAbsolute(request.destination) || typeof request.source !== 'string' ||
       !path.isAbsolute(request.source) || !Array.isArray(request.files)) {
@@ -197,6 +197,7 @@ async function importMedia(request) {
     } catch (error) {
       results.push({ ok: false, name: file && path.basename(file.sourcePath || ''), error: error.message });
     }
+    progress({ completed: results.length, total: request.files.length });
   }
   return results;
 }

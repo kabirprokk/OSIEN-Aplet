@@ -7,10 +7,14 @@ OSIEN-Aplet is a local-first Windows desktop app for selecting accessible iPhone
 - Scans a selected folder for common photo and video formats.
 - Uses embedded capture dates when readable; otherwise uses the file's modified date.
 - Previews the file list, filters by photo/video, searches, and supports selection.
+- Groups files by date and supports selecting visible files or one date group.
+- Shows live discovered-file count and scan rate; avoids probing every file size during a scan, then shows the current file's actual byte progress and cumulative bytes written during import.
+- Groups media by capture date, with per-day selection, Select all, and Clear selection.
 - Copies selected files without overwriting existing files.
 - Organizes output as `Photos/YYYY-MM-DD/` and `Videos/YYYY-MM-DD/`.
 - Checks whether Windows reports a connected Apple iPhone in its Plug and Play device list.
-- Includes a remembered light/dark appearance toggle and follows the Windows theme on first launch.
+- Uses a custom frameless window, React, Radix UI checkboxes, Lucide icons, and a remembered dark/light appearance toggle.
+- Uses the supplied OSIEN logo and black/cyan/lavender brand palette.
 - Keeps file data on the PC; no accounts, telemetry, or cloud upload.
 
 ## iPhone access notes
@@ -25,12 +29,12 @@ Date fallback can be inaccurate when the source file timestamp changed during tr
 
 ## Development
 
-Requires Node.js 20+ and npm.
+Requires Node.js 20.19+ (or 22.12+) and npm.
 
 ```powershell
-npm install
-npm test
-npm start
+npm.cmd install
+npm.cmd test
+npm.cmd start
 ```
 
 Build an x64 Windows installer:

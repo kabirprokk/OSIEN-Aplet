@@ -11,19 +11,28 @@ const media = { name: 'sample.JPG', segments: ['Internal Storage', 'DCIM', 'samp
 test('phone import resolves opaque IDs to server-owned paths and copies without changing originals', async t => {
   const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'aplet-phone-test-'));
   t.after(() => fs.rm(destination, { recursive: true, force: true }));
-  const reader = new PhoneReader(async request => {
+  const progress = [];
+  const reader = new PhoneReader(async (request, onProgress = () => {}) => {
     if (request.action === 'scan') return { device: 'test phone', files: [media], errors: [] };
     assert.deepEqual(request.segments, media.segments);
     const output = path.join(request.destination, media.name);
+    onProgress({ bytes: 2, totalBytes: 5 });
     await fs.writeFile(output, 'photo');
+    onProgress({ bytes: 5, totalBytes: 5 });
     return { path: output, size: 5 };
   });
   const scan = await reader.scan();
   assert.equal(scan.files[0].segments, undefined);
-  const results = await reader.import([scan.files[0].id], destination);
+  const results = await reader.import([scan.files[0].id], destination, event => progress.push(event));
   assert.equal(results[0].ok, true);
   assert.equal(await fs.readFile(path.join(destination, 'Photos', media.date, media.name), 'utf8'), 'photo');
   assert.deepEqual(await fs.readdir(destination), ['Photos']);
+  assert.deepEqual(progress.map(event => event.phase), ['transfer', 'transfer', 'transfer', 'saving', 'saved']);
+  assert.equal(progress[1].bytes, 2);
+  assert.equal(progress[1].currentTotalBytes, media.size);
+  assert.equal(progress[2].bytes, media.size);
+  assert.equal(progress[3].bytes, media.size);
+  assert.equal(progress[4].bytes, media.size);
   await assert.rejects(reader.import(['forged-id'], destination), /Read the iPhone again/);
 });
 

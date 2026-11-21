@@ -1,5 +1,7 @@
 node_modules/
 release/
+release-*/
 dist/
+app-dist/
 *.log
 .DS_Store

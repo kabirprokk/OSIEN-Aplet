@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('aplet', {
+  windowAction: (action) => ipcRenderer.send('window-action', action),
   scanPhone: () => ipcRenderer.invoke('scan-phone'),
+  onScanProgress: (callback) => ipcRenderer.on('scan-progress', (_event, data) => callback(data)),
+  onLocalProgress: (callback) => ipcRenderer.on('local-progress', (_event, data) => callback(data)),
   importPhone: (request) => ipcRenderer.invoke('import-phone', request),
   onPhoneProgress: (callback) => ipcRenderer.on('phone-progress', (_event, data) => callback(data)),
   chooseFolder: (title) => ipcRenderer.invoke('choose-folder', title),

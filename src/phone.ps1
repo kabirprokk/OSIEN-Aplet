@@ -30,7 +30,7 @@ try {
       $index = $script:folderIndexCache[$folderKey]
       $candidates = @()
       if ($index.ContainsKey($lookupName)) { $candidates = @($index[$lookupName]) }
-      if ($segment -isnot [string]) {
+      if ($segment -isnot [string] -and $candidates.Count -gt 1) {
         $candidates = @($candidates | Where-Object {
           [string]$_.ExtendedProperty('System.FileName') -ceq $segment.filename
         })
@@ -87,90 +87,171 @@ try {
       }
     }
   } elseif ($request.action -eq 'scan') {
-    $errors = New-Object System.Collections.Generic.List[string]
-    $scanStarted = [DateTime]::UtcNow
-    $script:lastPublish = $scanStarted
-    $script:batch = New-Object System.Collections.Generic.List[object]
-    $script:foundCount = 0
-    $photoExts = [System.Collections.Generic.HashSet[string]]::new([string[]]@('.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.gif','.bmp','.webp','.dng','.raw'), [StringComparer]::OrdinalIgnoreCase)
-    $videoExts = [System.Collections.Generic.HashSet[string]]::new([string[]]@('.mov','.mp4','.m4v','.3gp','.avi','.mkv'), [StringComparer]::OrdinalIgnoreCase)
-    function PublishScanProgress {
-      if ($script:batch.Count -eq 0) { return }
-      $now = [DateTime]::UtcNow
-      [Console]::Out.WriteLine((@{
-        progress=$true;found=$script:foundCount
-        elapsedMs=[long]($now-$scanStarted).TotalMilliseconds
-        items=@($script:batch.ToArray())
-      } | ConvertTo-Json -Depth 5 -Compress))
-      $script:batch.Clear()
-      $script:lastPublish = $now
-    }
-    function Walk($folder, [string[]]$segments, [int]$depth) {
-      if ($depth -gt 12) { throw 'Phone folder nesting exceeds the supported depth.' }
-      # Enumerate lazily over a single STA WPD session (USB MTP is half-duplex and
-      # deadlocks/thrashes under concurrent COM sessions).
-      foreach ($item in $folder.Items()) {
-        $rawName = [string]$item.Name
-        if ($item.IsFolder) {
-          $parts = @($segments) + @($rawName)
-          try { Walk $item.GetFolder $parts ($depth + 1) }
-          catch { $errors.Add(($parts -join '/') + ': ' + $_.Exception.Message) }
-          continue
-        }
-        try {
-          # Fast path: use Name directly if it already carries a known media extension,
-          # avoiding an expensive COM/MTP ExtendedProperty('System.FileName') round-trip.
-          $filename = $rawName
-          $ext = [IO.Path]::GetExtension($filename)
-          $type = $null
-          if ($ext) {
-            if ($photoExts.Contains($ext)) { $type = 'Photos' }
-            elseif ($videoExts.Contains($ext)) { $type = 'Videos' }
-          }
-          if (!$type) {
-            $extName = [string]$item.ExtendedProperty('System.FileName')
-            if ($extName) {
-              $filename = $extName
-            } elseif (!$ext) {
-              $typeName = [string]$item.Type
-              $extensionMatch = [regex]::Match($typeName, '(?i)\b(JPEG|JPG|HEIC|HEIF|PNG|TIFF|TIF|GIF|BMP|WEBP|DNG|RAW|MOV|MP4|M4V|3GP|AVI|MKV)\b')
-              if ($extensionMatch.Success) {
-                $extension = $extensionMatch.Groups[1].Value.ToLowerInvariant()
-                if ($extension -eq 'jpeg') { $extension = 'jpg' }
-                $filename += '.' + $extension
-              }
-            }
-            $ext = [IO.Path]::GetExtension($filename)
-            if ($ext) {
-              if ($photoExts.Contains($ext)) { $type = 'Photos' }
-              elseif ($videoExts.Contains($ext)) { $type = 'Videos' }
-            }
-          }
-          if (!$type) { continue }
-          # Use FolderItem.ModifyDate directly — zero ExtendedProperty MTP round-trips.
-          $date = $item.ModifyDate
-          $day = 'Unknown-date'
-          if ($date -is [datetime] -and $date.Year -ge 1970) { $day = $date.ToString('yyyy-MM-dd') }
-          $file = [pscustomobject]@{
-            name=$filename
-            segments=@($segments) + @([pscustomobject]@{name=$rawName;filename=$filename})
-            type=$type; date=$day
-            dateSource='device file date'; size=0
-          }
-          $script:batch.Add($file)
-          $script:foundCount++
-          $batchThreshold = if ($script:foundCount -le 40) { 20 } else { 150 }
-          if ($script:batch.Count -ge $batchThreshold -or ([DateTime]::UtcNow - $script:lastPublish).TotalMilliseconds -ge 250) {
-            PublishScanProgress
-          }
-        } catch {
-          $errors.Add(((@($segments) + @($rawName)) -join '/') + ': ' + $_.Exception.Message)
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+
+public static class FastPhoneScanner {
+  static readonly HashSet<string> PhotoExts = new HashSet<string>(
+    new[] { ".jpg",".jpeg",".png",".heic",".heif",".tif",".tiff",".gif",".bmp",".webp",".dng",".raw" },
+    StringComparer.OrdinalIgnoreCase);
+  static readonly HashSet<string> VideoExts = new HashSet<string>(
+    new[] { ".mov",".mp4",".m4v",".3gp",".avi",".mkv" },
+    StringComparer.OrdinalIgnoreCase);
+  static readonly Regex TypeExtRegex = new Regex(
+    @"\b(JPEG|JPG|HEIC|HEIF|PNG|TIFF|TIF|GIF|BMP|WEBP|DNG|RAW|MOV|MP4|M4V|3GP|AVI|MKV)\b",
+    RegexOptions.IgnoreCase | RegexOptions.Compiled);
+  static readonly Regex FolderDateRegex = new Regex(
+    @"^((?:19|20)\d{2})(0[1-9]|1[0-2])",
+    RegexOptions.Compiled);
+
+  static object GetProp(object com, string name) {
+    return com.GetType().InvokeMember(name, BindingFlags.GetProperty, null, com, null);
+  }
+
+  static void AppendJsonString(StringBuilder sb, string s) {
+    sb.Append('"');
+    if (s != null) {
+      for (int i = 0; i < s.Length; i++) {
+        char c = s[i];
+        if (c == '"' || c == '\\') { sb.Append('\\').Append(c); }
+        else if (c < 0x20) {
+          if (c == '\n') sb.Append("\\n");
+          else if (c == '\r') sb.Append("\\r");
+          else if (c == '\t') sb.Append("\\t");
+          else sb.Append("\\u").Append(((int)c).ToString("x4"));
+        } else {
+          sb.Append(c);
         }
       }
     }
-    Walk $phone.GetFolder @() 0
-    PublishScanProgress
-    [pscustomobject]@{count=$script:foundCount;errors=@($errors.ToArray());device=$phone.Name} | ConvertTo-Json -Depth 5 -Compress
+    sb.Append('"');
+  }
+
+  public static void Scan(object phoneItem, string phoneName) {
+    var errors = new List<string>();
+    var sw = Stopwatch.StartNew();
+    long lastFlushMs = 0;
+    int found = 0;
+    int batchCount = 0;
+    var itemsJson = new StringBuilder(65536);
+
+    Action flush = () => {
+      if (batchCount == 0) return;
+      var line = new StringBuilder(itemsJson.Length + 96);
+      line.Append("{\"progress\":true,\"found\":").Append(found)
+          .Append(",\"elapsedMs\":").Append(sw.ElapsedMilliseconds)
+          .Append(",\"items\":[").Append(itemsJson).Append("]}");
+      Console.Out.WriteLine(line.ToString());
+      itemsJson.Length = 0;
+      batchCount = 0;
+      lastFlushMs = sw.ElapsedMilliseconds;
+    };
+
+    Action<object, string[], string, int, string, string> walk = null;
+    walk = (folder, segments, segmentsJsonPrefix, depth, folderDay, folderDateSource) => {
+      if (depth > 12) throw new InvalidOperationException("Phone folder nesting exceeds the supported depth.");
+      var items = (IEnumerable)folder.GetType().InvokeMember("Items", BindingFlags.InvokeMethod, null, folder, null);
+      foreach (object item in items) {
+        string rawName = Convert.ToString(GetProp(item, "Name")) ?? "";
+        bool isFolder = Convert.ToBoolean(GetProp(item, "IsFolder"));
+        if (isFolder) {
+          var nextSegs = new string[segments.Length + 1];
+          Array.Copy(segments, nextSegs, segments.Length);
+          nextSegs[segments.Length] = rawName;
+          var segSb = new StringBuilder(segmentsJsonPrefix);
+          if (segSb.Length > 0) segSb.Append(',');
+          AppendJsonString(segSb, rawName);
+          string nextDay = folderDay;
+          string nextSource = folderDateSource;
+          var fm = FolderDateRegex.Match(rawName);
+          if (fm.Success) {
+            nextDay = fm.Groups[1].Value + "-" + fm.Groups[2].Value + "-01";
+            nextSource = "folder month";
+          }
+          try {
+            object subFolder = GetProp(item, "GetFolder");
+            walk(subFolder, nextSegs, segSb.ToString(), depth + 1, nextDay, nextSource);
+          } catch (Exception ex) {
+            errors.Add(string.Join("/", nextSegs) + ": " + ex.Message);
+          }
+          continue;
+        }
+        try {
+          string filename = rawName;
+          string ext = Path.GetExtension(filename);
+          string mediaType = null;
+          if (!string.IsNullOrEmpty(ext)) {
+            if (PhotoExts.Contains(ext)) mediaType = "Photos";
+            else if (VideoExts.Contains(ext)) mediaType = "Videos";
+          }
+          if (mediaType == null) {
+            string typeName = Convert.ToString(GetProp(item, "Type")) ?? "";
+            var m = TypeExtRegex.Match(typeName);
+            if (m.Success) {
+              string e = m.Groups[1].Value.ToLowerInvariant();
+              if (e == "jpeg") e = "jpg";
+              ext = "." + e;
+              if (string.IsNullOrEmpty(Path.GetExtension(filename))) filename += ext;
+              if (PhotoExts.Contains(ext)) mediaType = "Photos";
+              else if (VideoExts.Contains(ext)) mediaType = "Videos";
+            }
+          }
+          if (mediaType == null) continue;
+
+          if (batchCount > 0) itemsJson.Append(',');
+          itemsJson.Append("{\"name\":");
+          AppendJsonString(itemsJson, filename);
+          itemsJson.Append(",\"segments\":[");
+          if (segmentsJsonPrefix.Length > 0) itemsJson.Append(segmentsJsonPrefix).Append(',');
+          itemsJson.Append("{\"name\":");
+          AppendJsonString(itemsJson, rawName);
+          itemsJson.Append(",\"filename\":");
+          AppendJsonString(itemsJson, filename);
+          itemsJson.Append("}],\"type\":");
+          AppendJsonString(itemsJson, mediaType);
+          itemsJson.Append(",\"date\":");
+          AppendJsonString(itemsJson, folderDay);
+          itemsJson.Append(",\"dateSource\":");
+          AppendJsonString(itemsJson, folderDateSource);
+          itemsJson.Append(",\"size\":0}");
+
+          batchCount++;
+          found++;
+          int threshold = found <= 40 ? 20 : 250;
+          if (batchCount >= threshold || (sw.ElapsedMilliseconds - lastFlushMs) >= 200) {
+            flush();
+          }
+        } catch (Exception ex) {
+          errors.Add(string.Join("/", segments) + "/" + rawName + ": " + ex.Message);
+        }
+      }
+    };
+
+    object rootFolder = GetProp(phoneItem, "GetFolder");
+    walk(rootFolder, new string[0], "", 0, "Unknown-date", "on import");
+    flush();
+
+    var finalSb = new StringBuilder(256);
+    finalSb.Append("{\"count\":").Append(found).Append(",\"errors\":[");
+    for (int i = 0; i < errors.Count; i++) {
+      if (i > 0) finalSb.Append(',');
+      AppendJsonString(finalSb, errors[i]);
+    }
+    finalSb.Append("],\"device\":");
+    AppendJsonString(finalSb, phoneName);
+    finalSb.Append('}');
+    Console.Out.WriteLine(finalSb.ToString());
+  }
+}
+'@
+    [FastPhoneScanner]::Scan($phone, [string]$phone.Name)
   } elseif ($request.action -eq 'copy') {
     CopyPhoneFile $request | ConvertTo-Json -Compress
   } else { throw 'Unknown phone operation.' }

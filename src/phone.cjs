@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
 const { importMedia } = require('./importer.cjs');
+const { afcScan, createAfcCopySession } = require('./afc-phone.cjs');
 
 function phoneOperation(request, progress = () => {}) {
   return new Promise((resolve, reject) => {
@@ -138,7 +139,7 @@ class PhoneReader {
         if (!idsByPath.has(key)) idsByPath.set(key, randomUUID());
         return idsByPath.get(key);
       };
-      const result = await this.operation({ action: 'scan' }, event => {
+      const onEvent = event => {
         const discovered = (event.items || []).map(file => {
           const id = idFor(file);
           const stored = { ...file, id };
@@ -147,7 +148,22 @@ class PhoneReader {
           return publicFile;
         });
         progress({ ...event, files: discovered });
-      });
+      };
+      let result = null;
+      if (this.operation === phoneOperation) {
+        try {
+          result = await afcScan(onEvent);
+        } catch (error) {
+          if (error && /Connect only one iPhone/.test(error.message)) throw error;
+          // Fall back to Windows WPD if Apple Mobile Device Support (usbmuxd) is unavailable.
+          this.files.clear();
+          idsByPath.clear();
+          result = null;
+        }
+      }
+      if (!result) {
+        result = await this.operation({ action: 'scan' }, onEvent);
+      }
       // The Windows helper streams batches instead of serializing the entire
       // library a second time in its final response. Keep compatibility with
       // helpers that return a file list without progress events.
@@ -172,7 +188,10 @@ class PhoneReader {
     let completedBytes = 0;
     let session;
     try {
-      if (this.operation === phoneOperation && selected.length > 1) {
+      const firstFile = this.files.get(selected[0]);
+      if (this.operation === phoneOperation && firstFile && firstFile.segments && firstFile.segments.afc) {
+        session = await createAfcCopySession(firstFile.segments.udid);
+      } else if (this.operation === phoneOperation && selected.length > 1) {
         session = await createPhoneCopySession();
       }
       for (const id of selected) {

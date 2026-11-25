@@ -1,3 +1,5 @@
+'use strict';
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 function subscribe(channel, callback) {
@@ -17,5 +19,6 @@ contextBridge.exposeInMainWorld('aplet', {
   scanMedia: (source) => ipcRenderer.invoke('scan-media', source),
   importMedia: (request) => ipcRenderer.invoke('import-media', request),
   openFolder: (folder) => ipcRenderer.invoke('open-folder', folder),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   detectAppleDevice: () => ipcRenderer.invoke('detect-apple-device')
 });

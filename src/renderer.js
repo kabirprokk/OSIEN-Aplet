@@ -1,3 +1,5 @@
+'use strict';
+
 const state = { source: null, destination: null, files: [], selected: new Set(), filter: 'all' };
 const $ = (id) => document.getElementById(id);
 let busy = false;
@@ -73,16 +75,16 @@ $('read-phone').addEventListener('click', async () => {
 });
 
 function applyTheme(theme) {
-  const dark = ApletTheme.resolveTheme(theme, false) === 'dark';
+  const dark = window.ApletTheme.resolveTheme(theme, false) === 'dark';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $('theme-toggle').textContent = dark ? 'Light mode' : 'Dark mode';
   $('theme-toggle').setAttribute('aria-pressed', String(dark));
 }
 
 const savedTheme = localStorage.getItem('aplet-theme');
-applyTheme(ApletTheme.resolveTheme(savedTheme, window.matchMedia('(prefers-color-scheme: dark)').matches));
+applyTheme(window.ApletTheme.resolveTheme(savedTheme, window.matchMedia('(prefers-color-scheme: dark)').matches));
 $('theme-toggle').addEventListener('click', () => {
-  const nextTheme = ApletTheme.nextTheme(document.documentElement.dataset.theme);
+  const nextTheme = window.ApletTheme.nextTheme(document.documentElement.dataset.theme);
   localStorage.setItem('aplet-theme', nextTheme);
   applyTheme(nextTheme);
 });

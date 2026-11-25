@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import logo from '../assets/osien-logo.png';
+import DiveIn from './DiveIn.jsx';
 import {
-  ArrowDownToLine, Check, ChevronDown,
+  ArrowDownToLine, Check, ChevronDown, Compass,
   FileImage, Film, FolderOpen, HardDrive, Image,
   LoaderCircle, Minus, Moon, Search, Smartphone,
   Sun, X
@@ -52,6 +53,7 @@ function LibrarySkeleton() {
 }
 
 export default function App() {
+  const [page, setPage] = useState('memories');
   const [files, setFiles] = useState([]);
   const [displayLimit, setDisplayLimit] = useState(250);
   const [source, setSource] = useState(null);
@@ -70,6 +72,8 @@ export default function App() {
     return saved === 'light' || saved === 'dark' ? saved : 'dark';
   });
   const scanStarted = useRef(0);
+  const pendingScanFiles = useRef([]);
+  const scanFlushTimer = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -81,10 +85,22 @@ export default function App() {
   }, [organizeByDate]);
 
   useEffect(() => {
+    const flushScanFiles = () => {
+      scanFlushTimer.current = null;
+      if (!pendingScanFiles.current.length) return;
+      const batch = pendingScanFiles.current;
+      pendingScanFiles.current = [];
+      setFiles(old => [...old, ...batch]);
+    };
     const stopScanProgress = window.aplet.onScanProgress(({ found, elapsedMs, files: discovered = [] }) => {
       const seconds = Math.max(.25, (elapsedMs || Date.now() - scanStarted.current) / 1000);
       const rate = found ? Math.round(found / seconds) : 0;
-      if (discovered.length) setFiles(old => [...old, ...discovered]);
+      if (discovered.length) {
+        pendingScanFiles.current.push(...discovered);
+        if (!scanFlushTimer.current) {
+          scanFlushTimer.current = setTimeout(flushScanFiles, 400);
+        }
+      }
       setProgress({
         kind: 'scan', found, rate,
         label: 'Scanning iPhone',
@@ -99,7 +115,7 @@ export default function App() {
           : `Copying ${p.name} · file ${Math.min(p.completed + 1, p.total)} of ${p.total}`;
       const detail = `${bytesLabel(p.bytes)} transferred in total${p.currentTotalBytes > 0
         ? ` · ${bytesLabel(p.currentBytes)} of ${bytesLabel(p.currentTotalBytes)} for this file` : ''} · ${p.completed} of ${p.total} organized`;
-      setProgress({ kind: 'import', value: percent, indeterminate: p.phase === 'transfer' && percent == null,
+      setProgress({ kind: 'import', value: percent, indeterminate: p.phase === 'transfer' && percent === null,
         completed: p.completed, total: p.total, label: title, detail });
     });
     const stopLocalProgress = window.aplet.onLocalProgress(({ completed, total }) => setProgress({ kind: 'import', value: total ? Math.floor(completed / total * 100) : 0, completed, total, label: 'Organizing files', detail: `${completed} of ${total} files processed` }));
@@ -107,6 +123,11 @@ export default function App() {
       state: 'error', message: 'Connection check failed. Try again.'
     }));
     return () => {
+      if (scanFlushTimer.current) {
+        clearTimeout(scanFlushTimer.current);
+        scanFlushTimer.current = null;
+      }
+      pendingScanFiles.current = [];
       stopScanProgress();
       stopPhoneProgress();
       stopLocalProgress();
@@ -183,12 +204,22 @@ export default function App() {
 
   async function scanPhone() {
     if (busy) return;
+    if (scanFlushTimer.current) {
+      clearTimeout(scanFlushTimer.current);
+      scanFlushTimer.current = null;
+    }
+    pendingScanFiles.current = [];
     setBusy(true); setSource(null); setFiles([]); setSelected(new Set()); setDisplayLimit(250);
     setOperation('scanPhone');
     scanStarted.current = Date.now();
     setProgress({ kind: 'scan', found: 0, label: 'Connecting to iPhone', detail: 'Keep your iPhone unlocked and connected.' });
     try {
       const result = await window.aplet.scanPhone();
+      if (scanFlushTimer.current) {
+        clearTimeout(scanFlushTimer.current);
+        scanFlushTimer.current = null;
+      }
+      pendingScanFiles.current = [];
       setSource('iphone'); setFiles(result.files); setSelected(new Set());
       const skipped = result.errors?.length || 0;
       if (skipped) setProgress({ kind: 'error', label: 'Some folders could not be read',
@@ -294,6 +325,22 @@ export default function App() {
         <span className="brand-mark"><img src={logo} alt="" /></span>
         <span>OSIEN <strong>Memories</strong></span>
       </div>
+      <nav className="titlebar-nav" aria-label="App pages">
+        <button
+          type="button"
+          className={`nav-pill ${page === 'memories' ? 'active' : ''}`}
+          onClick={() => setPage('memories')}
+        >
+          Memories
+        </button>
+        <button
+          type="button"
+          className={`nav-pill ${page === 'dive-in' ? 'active' : ''}`}
+          onClick={() => setPage('dive-in')}
+        >
+          <Compass size={13} /> Dive in
+        </button>
+      </nav>
       <div className="titlebar-drag" onDoubleClick={() => window.aplet.windowAction('toggle-maximize')} />
       <button className="title-icon" aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
@@ -302,6 +349,12 @@ export default function App() {
       <WindowControls />
     </header>
 
+    {page === 'dive-in' ? (
+      <main className="app-main dive-main">
+        <DiveIn />
+      </main>
+    ) : (
+      <>
     <main className="app-main">
       {source ? <div className="loaded-toolbar">
         <div className="loaded-source">
@@ -339,8 +392,8 @@ export default function App() {
             {progress.kind === 'import' && Number.isFinite(progress.value) && <span>{progress.value}%</span>}
           </div>
           <p>{progress.detail}</p>
-          {progress.kind === 'import' && <div className={`progress-track ${progress.value == null ? 'indeterminate' : ''}`}>
-            <span style={progress.value == null ? undefined : { width: `${progress.value}%` }} />
+          {progress.kind === 'import' && <div className={`progress-track ${progress.value === null || progress.value === undefined ? 'indeterminate' : ''}`}>
+            <span style={progress.value === null || progress.value === undefined ? undefined : { width: `${progress.value}%` }} />
           </div>}
         </div>
         {!busy && <button className="dismiss-button" aria-label="Dismiss status" onClick={() => setProgress(null)}><X size={15} /></button>}
@@ -450,5 +503,7 @@ export default function App() {
         {operation === 'import' ? 'Importing' : !destination ? 'Choose save location' : `Import ${selected.size.toLocaleString()}`}
       </button>
     </footer>
+      </>
+    )}
   </div>;
 }

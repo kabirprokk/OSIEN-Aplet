@@ -1,3 +1,5 @@
+'use strict';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -107,4 +109,30 @@ test('rejects a destination inside the source folder', async (t) => {
     /destination outside the source/
   );
   await assert.rejects(fs.stat(destination));
+});
+
+test('parallel analyzer and copier handle large batches and concurrent duplicate names', async (t) => {
+  const root = await fixture(t);
+  const source = path.join(root, 'source');
+  const destination = path.join(root, 'output');
+  await fs.mkdir(path.join(source, 'A'), { recursive: true });
+  await fs.mkdir(path.join(source, 'B'), { recursive: true });
+
+  const writes = [];
+  for (let i = 0; i < 40; i++) {
+    const folder = i % 2 === 0 ? 'A' : 'B';
+    const name = i < 4 ? 'DUP.JPG' : `IMG_${i}.JPG`;
+    writes.push(fs.writeFile(path.join(source, folder, `${i < 4 ? (folder === 'A' ? 'DUP.JPG' : 'DUP.JPG') : name}`), `img-${i}`));
+  }
+  await Promise.all(writes);
+
+  const { files, errors } = await scanMedia(source);
+  assert.equal(errors.length, 0);
+  assert.equal(files.length, 38);
+
+  const results = await importMedia({ source, destination, files, layout: 'flat' });
+  assert.equal(results.length, 38);
+  assert.ok(results.every((r) => r.ok));
+  const saved = await fs.readdir(destination);
+  assert.equal(saved.length, 38);
 });

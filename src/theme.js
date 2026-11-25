@@ -1,3 +1,5 @@
+'use strict';
+
 (function attachApletTheme(root) {
   const theme = {
     resolveTheme(savedTheme, prefersDark) {

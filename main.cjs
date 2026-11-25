@@ -1,3 +1,5 @@
+'use strict';
+
 const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require('electron');
 const path = require('node:path');
 const { scanMedia, importMedia } = require('./src/importer.cjs');
@@ -57,6 +59,18 @@ ipcMain.handle('open-folder', async (_event, folder) => {
   const error = await shell.openPath(folder);
   return error || null;
 });
+ipcMain.handle('open-external', async (_event, rawUrl) => {
+  if (typeof rawUrl !== 'string') return 'Invalid URL.';
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return 'Invalid URL.';
+  }
+  if (parsed.protocol !== 'https:') return 'Only HTTPS links are allowed.';
+  await shell.openExternal(parsed.toString());
+  return null;
+});
 ipcMain.on('window-action', (event, action) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window) return;
@@ -73,6 +87,9 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}).catch((error) => {
+  console.error('Failed to start OSIEN Memories:', error);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

@@ -1,3 +1,5 @@
+'use strict';
+
 const { execFile } = require('node:child_process');
 
 const DEVICE_QUERY = [

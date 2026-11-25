@@ -1,7 +1,9 @@
+'use strict';
+
 const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
-const exifr = require('exifr');
+const { analyzeMediaParallel } = require('./parallel-analyzer.cjs');
 
 const IMAGE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.heic', '.heif', '.tif', '.tiff',
@@ -57,61 +59,51 @@ async function realpathWithMissing(target) {
   }
 }
 
-async function mediaDate(filePath, stats) {
-  if (!IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase()) || stats.size > 64 * 1024 * 1024) {
-    return { date: stats.mtime, source: 'file date' };
-  }
-  try {
-    const bytes = await fs.readFile(filePath);
-    const metadata = await exifr.parse(bytes, [
-      'DateTimeOriginal', 'CreateDate', 'MediaCreateDate',
-      'TrackCreateDate', 'ModifyDate'
-    ]);
-    const date = metadata && (
-      validDate(metadata.DateTimeOriginal) ||
-      validDate(metadata.MediaCreateDate) ||
-      validDate(metadata.TrackCreateDate) ||
-      validDate(metadata.CreateDate) ||
-      validDate(metadata.ModifyDate)
-    );
-    if (date) return { date, source: 'metadata' };
-  } catch {
-    // Some formats have no readable embedded date; use the file timestamp.
-  }
-  return { date: stats.mtime, source: 'file date' };
+const SCAN_CONCURRENCY = 24;
+const COPY_CONCURRENCY = 6;
+
+async function runWithConcurrency(items, limit, worker) {
+  let index = 0;
+  const count = Math.min(limit, items.length);
+  const runners = Array.from({ length: count }, async () => {
+    while (index < items.length) {
+      const current = items[index++];
+      await worker(current);
+    }
+  });
+  await Promise.all(runners);
 }
 
 async function walk(directory, results, errors) {
-  let entries;
-  try {
-    entries = await fs.readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    errors.push({ path: directory, message: error.message });
-    return;
-  }
-  for (const entry of entries) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) {
-      await walk(entryPath, results, errors);
-    } else if (entry.isFile() && classify(entryPath)) {
+  const dirs = [directory];
+  const mediaEntries = [];
+
+  while (dirs.length) {
+    const batch = dirs.splice(0, SCAN_CONCURRENCY);
+    await Promise.all(batch.map(async (dir) => {
+      let entries;
       try {
-        const stats = await fs.stat(entryPath);
-        const { date, source } = await mediaDate(entryPath, stats);
-        results.push({
-          id: entryPath,
-          name: entry.name,
-          sourcePath: entryPath,
-          type: classify(entryPath),
-          date: dateFolder(date),
-          dateSource: source,
-          size: stats.size
-        });
+        entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (error) {
-        errors.push({ path: entryPath, message: error.message });
+        errors.push({ path: dir, message: error.message });
+        return;
       }
-    }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const entryPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          dirs.push(entryPath);
+        } else if (entry.isFile()) {
+          const type = classify(entryPath);
+          if (type) mediaEntries.push({ entryPath, name: entry.name, type });
+        }
+      }
+    }));
   }
+
+  const analyzed = await analyzeMediaParallel(mediaEntries);
+  results.push(...analyzed.results);
+  errors.push(...analyzed.errors);
 }
 
 async function scanMedia(source) {
@@ -128,23 +120,32 @@ async function scanMedia(source) {
   return { files, errors };
 }
 
-async function unusedDestination(directory, name) {
+async function unusedDestination(directory, name, reserved) {
   const extension = path.extname(name);
   const stem = path.basename(name, extension);
   let candidate = path.join(directory, name);
   let suffix = 2;
   while (true) {
+    const key = candidate.toLowerCase();
+    if (reserved) {
+      if (reserved.has(key)) {
+        candidate = path.join(directory, `${stem} (${suffix++})${extension}`);
+        continue;
+      }
+      reserved.add(key);
+    }
     try {
       await fs.access(candidate);
       candidate = path.join(directory, `${stem} (${suffix++})${extension}`);
     } catch (error) {
       if (error.code === 'ENOENT') return candidate;
+      if (reserved) reserved.delete(key);
       throw error;
     }
   }
 }
 
-async function copyOne(file, destinationRoot, layout = 'organized') {
+async function copyOne(file, destinationRoot, layout = 'organized', reserved = null) {
   if (!file || typeof file.sourcePath !== 'string' || !path.isAbsolute(file.sourcePath)) {
     throw new Error('Invalid source file.');
   }
@@ -154,7 +155,7 @@ async function copyOne(file, destinationRoot, layout = 'organized') {
 
   const folder = layout === 'flat' ? destinationRoot : path.join(destinationRoot, type, file.date);
   await fs.mkdir(folder, { recursive: true });
-  const target = await unusedDestination(folder, path.basename(file.sourcePath));
+  const target = await unusedDestination(folder, path.basename(file.sourcePath), reserved);
   await fs.copyFile(file.sourcePath, target, constants.COPYFILE_EXCL);
   return target;
 }
@@ -192,15 +193,16 @@ async function importMedia(request, progress = () => {}) {
   if (isWithin(source, destination)) {
     throw new Error('Choose a destination outside the source folder.');
   }
-  for (const file of validFiles) {
+  const reserved = new Set();
+  await runWithConcurrency(validFiles, COPY_CONCURRENCY, async (file) => {
     try {
-      const outputPath = await copyOne(file, destination, layout);
+      const outputPath = await copyOne(file, destination, layout, reserved);
       results.push({ ok: true, name: path.basename(file.sourcePath), outputPath, type: file.type });
     } catch (error) {
       results.push({ ok: false, name: file && path.basename(file.sourcePath || ''), error: error.message });
     }
     progress({ completed: results.length, total: request.files.length });
-  }
+  });
   return results;
 }
 
